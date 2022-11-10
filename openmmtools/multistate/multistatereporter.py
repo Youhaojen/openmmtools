@@ -277,7 +277,8 @@ class MultiStateReporter(object):
 
         # Open analysis file.
         self._storage_analysis = self._open_dataset_robustly(self._storage_analysis_file_path,
-                                                             mode, version=netcdf_format)
+                                                             mode, version=netcdf_format,
+                                                             )
 
 
         # The analysis netcdf file holds a reference UUID so that we can check
@@ -1654,7 +1655,10 @@ class MultiStateReporter(object):
                 x = sampler_state.positions / unit.nanometers
                 positions[replica_index, :, :] = x[:, :]
             # Store positions
-            storage.variables['positions'][write_iteration, :, :, :] = positions
+            try:
+                storage.variables['positions'][write_iteration, :, :, :] = positions
+            except RuntimeError as e:
+                logging.warning(e)
 
             # Create a numpy array to avoid making multiple (possibly inefficient) calls to netCDF assignments
             velocities = np.zeros([n_replicas, n_particles, 3])
