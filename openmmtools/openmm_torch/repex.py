@@ -70,7 +70,7 @@ class MixedSystemConstructor():
         self._implementation = implementation
     
         self._atom_indices = get_atoms_from_resname(topology, nnpify_resname)
-        # assert_no_residue_constraints(system, self._atom_indices)
+        assert_no_residue_constraints(system, self._atom_indices)
         self._nnp_potential_str = nnp_potential
         self._nnp_potential = MLPotential(self._nnp_potential_str)
         self._createMixedSystem_kwargs = createMixedSystem_kwargs
@@ -133,9 +133,14 @@ class RepexConstructor():
             logging.info(f"Removing storage file {self._storage_kwargs['storage']}")
             os.remove(self._storage_kwargs["storage"])
         if os.path.isfile(self._storage_kwargs["storage"]) and self.restart:
+            # TODO: remove this when this issue is fixed https://github.com/choderalab/openmmtools/issues/624
+            for key in os.environ:
+                print(key)
+
             # repex.nc file exists, attempt to restart from this file
             logging.info(f"Restarting simulation from file {self._storage_kwargs['storage']}")
-            _sampler = NNPRepexSampler(mcmc_moves=mcmc_moves, **self._replica_exchange_sampler_kwargs).from_storage(self._storage_kwargs["storage"])
+            # print(NNPRepexSampler.read_status(self._storage_kwargs["storage"]))
+            _sampler = NNPRepexSampler.from_storage(self._storage_kwargs["storage"])
         else:
             logging.info(f"Starting Repex sampling from scratch")
             _sampler = NNPRepexSampler(mcmc_moves=mcmc_moves, **self._replica_exchange_sampler_kwargs)
