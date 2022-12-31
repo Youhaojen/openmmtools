@@ -107,7 +107,7 @@ class RepexConstructor():
                                                                      'online_analysis_interval': 10,
                                                                      'online_analysis_minimum_iterations': 10,
                                                                     },
-                 **unused_kwargs):
+                 **kwargs):
         self._mixed_system = mixed_system
         self._storage_kwargs = storage_kwargs
         self._temperature = temperature
@@ -116,6 +116,7 @@ class RepexConstructor():
         self._replica_exchange_sampler_kwargs = replica_exchange_sampler_kwargs
         self._n_states = n_states
         self.restart = restart
+        self._extra_kwargs = kwargs
         
         # initial positions
         self._initial_positions = initial_positions
