@@ -83,7 +83,19 @@ class MixedSystemConstructor():
                                                      implementation='nnpops', 
                                                      interpolate=True,
                                                      **self._createMixedSystem_kwargs
-                                                     )
+                                                    )
+
+class DecoupledSystemConstructor():
+    """
+    Analogue of mixedSYstemConstructor, but takes the mixed system already created and returns a copy of the system with the appropriate nonbonded interactions placed in a separate customCV
+    """
+    def __init__(self,
+                 mixed_system: openmm.System) -> None:
+        self.mixed_system = mixed_system
+        
+    @property
+    def decoupled_system(self):
+        return self._nnp_potential.createDecoupledSystem(self.mixed_system)
 
 class RepexConstructor():
     """ 
@@ -151,5 +163,8 @@ class RepexConstructor():
                         mixed_system = self._mixed_system, 
                         init_positions = self._initial_positions, 
                         temperature = self._temperature, 
-                        storage_kwargs = self._storage_kwargs)  
+                        storage_kwargs = self._storage_kwargs,
+                        setup_equilibration_intervals=10,
+                        steps_per_setup_equilibration_interval=100,
+                        **self._extra_kwargs)  
         return _sampler
