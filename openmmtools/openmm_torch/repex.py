@@ -85,17 +85,10 @@ class MixedSystemConstructor():
                                                      **self._createMixedSystem_kwargs
                                                     )
 
-class DecoupledSystemConstructor():
-    """
-    Analogue of mixedSYstemConstructor, but takes the mixed system already created and returns a copy of the system with the appropriate nonbonded interactions placed in a separate customCV
-    """
-    def __init__(self,
-                 mixed_system: openmm.System) -> None:
-        self.mixed_system = mixed_system
-        
     @property
     def decoupled_system(self):
         return self._nnp_potential.createDecoupledSystem(self.mixed_system)
+
 
 class RepexConstructor():
     """ 
