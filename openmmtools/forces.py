@@ -24,6 +24,7 @@ import re
 
 import scipy
 import numpy as np
+
 try:
     import openmm
     from openmm import unit
@@ -41,13 +42,16 @@ logger = logging.getLogger(__name__)
 # UTILITY FUNCTIONS
 # =============================================================================
 
+
 class MultipleForcesError(Exception):
     """Error raised when multiple forces of the same class are found."""
+
     pass
 
 
 class NoForceFoundError(Exception):
     """Error raised when no forces matching the given criteria are found."""
+
     pass
 
 
@@ -139,7 +143,9 @@ def find_forces(system, force_type, only_one=False, include_subclasses=False):
             if re_pattern.match(force.__class__.__name__):
                 forces[force_idx] = force
         # Check if the force class matches the requirements.
-        elif type(force) is force_type or (include_subclasses and isinstance(force, force_type)):
+        elif type(force) is force_type or (
+            include_subclasses and isinstance(force, force_type)
+        ):
             forces[force_idx] = force
 
     # Second pass to find all subclasses of the matching forces.
@@ -158,9 +164,13 @@ def find_forces(system, force_type, only_one=False, include_subclasses=False):
     # Handle only_one.
     if only_one is True:
         if len(forces) == 0:
-            raise NoForceFoundError('No force of type {} could be found.'.format(force_type))
+            raise NoForceFoundError(
+                "No force of type {} could be found.".format(force_type)
+            )
         if len(forces) > 1:
-            raise MultipleForcesError('Found multiple forces of type {}'.format(force_type))
+            raise MultipleForcesError(
+                "Found multiple forces of type {}".format(force_type)
+            )
         return forces.popitem(last=False)
 
     return forces
@@ -195,12 +205,12 @@ def _compute_harmonic_volume(radius, spring_constant, beta):
     energy_unit = unit.kilojoules_per_mole
     radius /= length_unit
     beta *= energy_unit
-    spring_constant /= energy_unit/length_unit**2
+    spring_constant /= energy_unit / length_unit**2
 
     bk = beta * spring_constant
     bk_2 = bk / 2
     bkr2_2 = bk_2 * radius**2
-    volume = math.sqrt(math.pi/2) * math.erf(math.sqrt(bkr2_2)) / bk**(3.0/2)
+    volume = math.sqrt(math.pi / 2) * math.erf(math.sqrt(bkr2_2)) / bk ** (3.0 / 2)
     volume -= math.exp(-bkr2_2) * radius / bk
     return 4 * math.pi * volume * length_unit**3
 
@@ -230,6 +240,7 @@ def _compute_harmonic_radius(spring_constant, potential_energy):
 # =============================================================================
 # GENERIC CLASSES FOR RADIALLY SYMMETRIC RECEPTOR-LIGAND RESTRAINTS
 # =============================================================================
+
 
 class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
     """Base class for radially-symmetric restraint force.
@@ -273,23 +284,35 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
 
     """
 
-    def __init__(self, restraint_parameters, restrained_atom_indices1,
-                 restrained_atom_indices2, controlling_parameter_name,
-                 *args, **kwargs):
+    def __init__(
+        self,
+        restraint_parameters,
+        restrained_atom_indices1,
+        restrained_atom_indices2,
+        controlling_parameter_name,
+        *args,
+        **kwargs
+    ):
         super(RadiallySymmetricRestraintForce, self).__init__(*args, **kwargs)
 
         # Unzip bond parameters names and values from dict.
-        assert len(restraint_parameters) == 1 or isinstance(restraint_parameters, collections.OrderedDict)
+        assert len(restraint_parameters) == 1 or isinstance(
+            restraint_parameters, collections.OrderedDict
+        )
         parameter_names, parameter_values = zip(*restraint_parameters.items())
 
         # Let the subclass initialize its bond.
-        self._create_bond(parameter_values, restrained_atom_indices1, restrained_atom_indices2)
+        self._create_bond(
+            parameter_values, restrained_atom_indices1, restrained_atom_indices2
+        )
 
         # Add parameters. First global parameter is _restorable_force__class_hash
         # from the RestorableOpenMMObject class.
-        err_msg = ('The force should have a single global parameter at this point. '
-                   'This is likely because the subclass called addGlobalParameter '
-                   'before calling super().__init__')
+        err_msg = (
+            "The force should have a single global parameter at this point. "
+            "This is likely because the subclass called addGlobalParameter "
+            "before calling super().__init__"
+        )
         assert self.getNumGlobalParameters() == 1, err_msg
         self.addGlobalParameter(controlling_parameter_name, 1.0)
         for parameter in parameter_names:
@@ -300,8 +323,9 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
     # -------------------------------------------------------------------------
 
     @abc.abstractmethod
-    def _create_bond(self, bond_parameter_values, restrained_atom_indices1,
-                     restrained_atom_indices2):
+    def _create_bond(
+        self, bond_parameter_values, restrained_atom_indices1, restrained_atom_indices2
+    ):
         """Create the bond modelling the restraint.
 
         Parameters
@@ -334,8 +358,10 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
     def restraint_parameters(self):
         """OrderedDict: The restraint parameters in dictionary form."""
         parameter_values = self.getBondParameters(0)[-1]
-        restraint_parameters = [(self.getPerBondParameterName(parameter_idx), parameter_value)
-                                for parameter_idx, parameter_value in enumerate(parameter_values)]
+        restraint_parameters = [
+            (self.getPerBondParameterName(parameter_idx), parameter_value)
+            for parameter_idx, parameter_value in enumerate(parameter_values)
+        ]
         return collections.OrderedDict(restraint_parameters)
 
     @property
@@ -364,9 +390,14 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
     # Methods to compute the standard state correction.
     # -------------------------------------------------------------------------
 
-    def compute_standard_state_correction(self, thermodynamic_state, square_well=False,
-                                          radius_cutoff=None, energy_cutoff=None,
-                                          max_volume=None):
+    def compute_standard_state_correction(
+        self,
+        thermodynamic_state,
+        square_well=False,
+        radius_cutoff=None,
+        energy_cutoff=None,
+        max_volume=None,
+    ):
         """Return the standard state correction of the restraint.
 
         The standard state correction is computed as
@@ -420,21 +451,28 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
         """
         # Determine restraint bound volume.
         is_npt = thermodynamic_state.pressure is not None
-        if max_volume == 'system':
+        if max_volume == "system":
             # ThermodynamicState.volume is None in the NPT ensemble.
             # max_volume will still be None if the system is not periodic.
             max_volume = thermodynamic_state.get_volume(ignore_ensemble=True)
         elif max_volume is None and not is_npt:
             max_volume = thermodynamic_state.volume
         elif max_volume is None:
-            raise TypeError('max_volume must be provided with NPT ensemble')
+            raise TypeError("max_volume must be provided with NPT ensemble")
 
         # Non periodic systems reweighted to a square-well restraint must always have a cutoff.
-        if (not thermodynamic_state.is_periodic and square_well is True and
-                    radius_cutoff is None and energy_cutoff is None and max_volume is None):
-            raise TypeError('One between radius_cutoff, energy_cutoff, or max_volume '
-                            'must be provided when reweighting non-periodic thermodynamic '
-                            'states to a square-well restraint.')
+        if (
+            not thermodynamic_state.is_periodic
+            and square_well is True
+            and radius_cutoff is None
+            and energy_cutoff is None
+            and max_volume is None
+        ):
+            raise TypeError(
+                "One between radius_cutoff, energy_cutoff, or max_volume "
+                "must be provided when reweighting non-periodic thermodynamic "
+                "states to a square-well restraint."
+            )
 
         # If we evaluate the square well potential with no cutoffs,
         # just use the volume of the periodic box.
@@ -447,19 +485,27 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
         # Use numerical integration.
         else:
             restraint_volume = self._compute_restraint_volume(
-                thermodynamic_state, square_well, radius_cutoff, energy_cutoff)
+                thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+            )
 
         # Bound the restraint volume to the periodic box volume.
         if max_volume is not None and restraint_volume > max_volume:
-            debug_msg = 'Limiting the restraint volume to {} nm^3 (original was {} nm^3)'
-            logger.debug(debug_msg.format(max_volume / unit.nanometers**3,
-                                          restraint_volume / unit.nanometers**3))
+            debug_msg = (
+                "Limiting the restraint volume to {} nm^3 (original was {} nm^3)"
+            )
+            logger.debug(
+                debug_msg.format(
+                    max_volume / unit.nanometers**3,
+                    restraint_volume / unit.nanometers**3,
+                )
+            )
             restraint_volume = max_volume
 
         return -math.log(STANDARD_STATE_VOLUME / restraint_volume)
 
-    def _compute_restraint_volume(self, thermodynamic_state, square_well,
-                                  radius_cutoff, energy_cutoff):
+    def _compute_restraint_volume(
+        self, thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+    ):
         """Compute the volume of the restraint.
 
         This function is called by ``compute_standard_state_correction()`` when
@@ -490,11 +536,13 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
 
         """
         # By default, use numerical integration.
-        return self._integrate_restraint_volume(thermodynamic_state, square_well,
-                                                radius_cutoff, energy_cutoff)
+        return self._integrate_restraint_volume(
+            thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+        )
 
-    def _integrate_restraint_volume(self, thermodynamic_state, square_well,
-                                    radius_cutoff, energy_cutoff):
+    def _integrate_restraint_volume(
+        self, thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+    ):
         """Compute the restraint volume through numerical integration.
 
         Parameters
@@ -537,11 +585,11 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
 
         # Create a Reference context to evaluate energies on the CPU.
         integrator = openmm.VerletIntegrator(1.0 * unit.femtoseconds)
-        platform = openmm.Platform.getPlatformByName('Reference')
+        platform = openmm.Platform.getPlatformByName("Reference")
         context = openmm.Context(system, integrator, platform)
 
         # Set default positions.
-        positions = unit.Quantity(np.zeros([2,3]), distance_unit)
+        positions = unit.Quantity(np.zeros([2, 3]), distance_unit)
         context.setPositions(positions)
 
         # Create a function to compute integrand as a function of interparticle separation.
@@ -579,18 +627,23 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
 
         # Determine integration limits.
         r_min, r_max, analytical_volume = self._determine_integral_limits(
-            thermodynamic_state, radius_cutoff, energy_cutoff, restraint_potential_func)
+            thermodynamic_state, radius_cutoff, energy_cutoff, restraint_potential_func
+        )
 
         # Integrate restraint volume.
         restraint_volume, restraint_volume_error = scipy.integrate.quad(
-            lambda r: integrand(r), r_min / distance_unit, r_max / distance_unit)
+            lambda r: integrand(r), r_min / distance_unit, r_max / distance_unit
+        )
         restraint_volume = restraint_volume * distance_unit**3 + analytical_volume
-        logger.debug("restraint_volume = {} nm^3".format(restraint_volume / distance_unit**3))
+        logger.debug(
+            "restraint_volume = {} nm^3".format(restraint_volume / distance_unit**3)
+        )
 
         return restraint_volume
 
-    def _determine_integral_limits(self, thermodynamic_state, radius_cutoff,
-                                   energy_cutoff, potential_energy_func):
+    def _determine_integral_limits(
+        self, thermodynamic_state, radius_cutoff, energy_cutoff, potential_energy_func
+    ):
         """Determine integration limits for the standard state correction calculation.
 
         This is called by ``_integrate_restraint_volume()`` to determine
@@ -636,7 +689,7 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
 
         # The lower limit is always 0. Find the upper limit.
         r_min = 0.0 * distance_unit
-        r_max = float('inf')
+        r_max = float("inf")
         analytical_volume = 0.0 * distance_unit**3
 
         if radius_cutoff is not None:
@@ -645,7 +698,9 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
         if energy_cutoff is not None:
             # First check if an analytical solution is available.
             try:
-                energy_cutoff_distance = self.distance_at_energy(energy_cutoff*thermodynamic_state.kT)
+                energy_cutoff_distance = self.distance_at_energy(
+                    energy_cutoff * thermodynamic_state.kT
+                )
             except NotImplementedError:
                 # Find the first distance that exceeds the cutoff.
                 potential = 0.0
@@ -656,7 +711,7 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
             r_max = min(r_max, energy_cutoff_distance)
 
         # Handle the case where there are no distance or energy cutoff.
-        if r_max == float('inf'):
+        if r_max == float("inf"):
             # For periodic systems, take thrice the maximum dimension of the system.
             if thermodynamic_state.is_periodic:
                 box_vectors = thermodynamic_state.default_box_vectors
@@ -669,8 +724,9 @@ class RadiallySymmetricRestraintForce(utils.RestorableOpenMMObject):
         return r_min, r_max, analytical_volume
 
 
-class RadiallySymmetricCentroidRestraintForce(RadiallySymmetricRestraintForce,
-                                              openmm.CustomCentroidBondForce):
+class RadiallySymmetricCentroidRestraintForce(
+    RadiallySymmetricRestraintForce, openmm.CustomCentroidBondForce
+):
     """Base class for radially-symmetric restraints between the centroids of two groups of atoms.
 
     The restraint is applied between the centers of mass of two groups
@@ -708,15 +764,24 @@ class RadiallySymmetricCentroidRestraintForce(RadiallySymmetricRestraintForce,
 
     """
 
-    def __init__(self, energy_function, restraint_parameters,
-                 restrained_atom_indices1, restrained_atom_indices2,
-                 controlling_parameter_name='lambda_restraints'):
+    def __init__(
+        self,
+        energy_function,
+        restraint_parameters,
+        restrained_atom_indices1,
+        restrained_atom_indices2,
+        controlling_parameter_name="lambda_restraints",
+    ):
         # Initialize CustomCentroidBondForce.
-        energy_function = controlling_parameter_name + ' * (' + energy_function + ')'
+        energy_function = controlling_parameter_name + " * (" + energy_function + ")"
         custom_centroid_bond_force_args = [2, energy_function]
         super(RadiallySymmetricCentroidRestraintForce, self).__init__(
-            restraint_parameters, restrained_atom_indices1, restrained_atom_indices2,
-            controlling_parameter_name, *custom_centroid_bond_force_args)
+            restraint_parameters,
+            restrained_atom_indices1,
+            restrained_atom_indices2,
+            controlling_parameter_name,
+            *custom_centroid_bond_force_args
+        )
 
     @property
     def restrained_atom_indices1(self):
@@ -738,16 +803,18 @@ class RadiallySymmetricCentroidRestraintForce(RadiallySymmetricRestraintForce,
     def restrained_atom_indices2(self, atom_indices):
         self.setGroupParameters(1, atom_indices)
 
-    def _create_bond(self, bond_parameter_values, restrained_atom_indices1,
-                     restrained_atom_indices2):
+    def _create_bond(
+        self, bond_parameter_values, restrained_atom_indices1, restrained_atom_indices2
+    ):
         """Create the bond modelling the restraint."""
         self.addGroup(restrained_atom_indices1)
         self.addGroup(restrained_atom_indices2)
         self.addBond([0, 1], bond_parameter_values)
 
 
-class RadiallySymmetricBondRestraintForce(RadiallySymmetricRestraintForce,
-                                          openmm.CustomBondForce):
+class RadiallySymmetricBondRestraintForce(
+    RadiallySymmetricRestraintForce, openmm.CustomBondForce
+):
     """Base class for radially-symmetric restraints between two atoms.
 
     This is a version of ``RadiallySymmetricCentroidRestraintForce`` that can
@@ -756,15 +823,24 @@ class RadiallySymmetricBondRestraintForce(RadiallySymmetricRestraintForce,
 
     """
 
-    def __init__(self, energy_function, restraint_parameters,
-                 restrained_atom_index1, restrained_atom_index2,
-                 controlling_parameter_name='lambda_restraints'):
+    def __init__(
+        self,
+        energy_function,
+        restraint_parameters,
+        restrained_atom_index1,
+        restrained_atom_index2,
+        controlling_parameter_name="lambda_restraints",
+    ):
         # Initialize CustomBondForce.
-        energy_function = energy_function.replace('distance(g1,g2)', 'r')
-        energy_function = controlling_parameter_name + ' * (' + energy_function + ')'
+        energy_function = energy_function.replace("distance(g1,g2)", "r")
+        energy_function = controlling_parameter_name + " * (" + energy_function + ")"
         super(RadiallySymmetricBondRestraintForce, self).__init__(
-            restraint_parameters, [restrained_atom_index1], [restrained_atom_index2],
-            controlling_parameter_name, energy_function)
+            restraint_parameters,
+            [restrained_atom_index1],
+            [restrained_atom_index2],
+            controlling_parameter_name,
+            energy_function,
+        )
 
     # -------------------------------------------------------------------------
     # Public properties.
@@ -794,30 +870,38 @@ class RadiallySymmetricBondRestraintForce(RadiallySymmetricRestraintForce,
         atom1, atom2, parameters = self.getBondParameters(0)
         self.setBondParameters(0, atom1, atom_indices[0], parameters)
 
-    def _create_bond(self, bond_parameter_values, restrained_atom_indices1, restrained_atom_indices2):
+    def _create_bond(
+        self, bond_parameter_values, restrained_atom_indices1, restrained_atom_indices2
+    ):
         """Create the bond modelling the restraint."""
-        self.addBond(restrained_atom_indices1[0], restrained_atom_indices2[0], bond_parameter_values)
+        self.addBond(
+            restrained_atom_indices1[0],
+            restrained_atom_indices2[0],
+            bond_parameter_values,
+        )
 
 
 # =============================================================================
 # HARMONIC RESTRAINTS
 # =============================================================================
 
+
 class HarmonicRestraintForceMixIn(object):
     """A mix-in providing the interface for harmonic restraints."""
 
     def __init__(self, spring_constant, *args, **kwargs):
-        energy_function = '(K/2)*distance(g1,g2)^2'
-        restraint_parameters = collections.OrderedDict([('K', spring_constant)])
-        super(HarmonicRestraintForceMixIn, self).__init__(energy_function, restraint_parameters,
-                                                          *args, **kwargs)
+        energy_function = "(K/2)*distance(g1,g2)^2"
+        restraint_parameters = collections.OrderedDict([("K", spring_constant)])
+        super(HarmonicRestraintForceMixIn, self).__init__(
+            energy_function, restraint_parameters, *args, **kwargs
+        )
 
     @property
     def spring_constant(self):
         """unit.openmm.Quantity: The spring constant K (units of energy/mole/distance^2)."""
         # This works for both CustomBondForce and CustomCentroidBondForce.
         parameters = self.getBondParameters(0)[-1]
-        return parameters[0] * unit.kilojoule_per_mole/unit.nanometers**2
+        return parameters[0] * unit.kilojoule_per_mole / unit.nanometers**2
 
     def distance_at_energy(self, potential_energy):
         """Compute the distance at which the potential energy is ``potential_energy``.
@@ -836,8 +920,9 @@ class HarmonicRestraintForceMixIn(object):
         """
         return _compute_harmonic_radius(self.spring_constant, potential_energy)
 
-    def _compute_restraint_volume(self, thermodynamic_state, square_well,
-                                  radius_cutoff, energy_cutoff):
+    def _compute_restraint_volume(
+        self, thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+    ):
         """Compute the restraint volume analytically."""
         # If there is not a cutoff, integrate up to 100kT
         if energy_cutoff is None:
@@ -847,12 +932,14 @@ class HarmonicRestraintForceMixIn(object):
             radius = min(radius, radius_cutoff)
         if square_well:
             return _compute_sphere_volume(radius)
-        return _compute_harmonic_volume(radius, self.spring_constant,
-                                        thermodynamic_state.beta)
+        return _compute_harmonic_volume(
+            radius, self.spring_constant, thermodynamic_state.beta
+        )
 
 
-class HarmonicRestraintForce(HarmonicRestraintForceMixIn,
-                             RadiallySymmetricCentroidRestraintForce):
+class HarmonicRestraintForce(
+    HarmonicRestraintForceMixIn, RadiallySymmetricCentroidRestraintForce
+):
     """Impose a single harmonic restraint between the centroids of two groups of atoms.
 
     This can be used to prevent the ligand from drifting too far from the
@@ -895,12 +982,14 @@ class HarmonicRestraintForce(HarmonicRestraintForceMixIn,
     controlling_parameter_name
 
     """
+
     # All the methods are provided by the mix-ins.
     pass
 
 
-class HarmonicRestraintBondForce(HarmonicRestraintForceMixIn,
-                                 RadiallySymmetricBondRestraintForce):
+class HarmonicRestraintBondForce(
+    HarmonicRestraintForceMixIn, RadiallySymmetricBondRestraintForce
+):
     """Impose a single harmonic restraint between two atoms.
 
     This is a version of ``HarmonicRestraintForce`` that can be used with
@@ -928,6 +1017,7 @@ class HarmonicRestraintBondForce(HarmonicRestraintForceMixIn,
     controlling_parameter_name
 
     """
+
     # All the methods are provided by the mix-ins.
     pass
 
@@ -936,24 +1026,25 @@ class HarmonicRestraintBondForce(HarmonicRestraintForceMixIn,
 # FLAT-BOTTOM RESTRAINTS
 # =============================================================================
 
+
 class FlatBottomRestraintForceMixIn(object):
     """A mix-in providing the interface for flat-bottom restraints."""
 
     def __init__(self, spring_constant, well_radius, *args, **kwargs):
-        energy_function = 'step(distance(g1,g2)-r0) * (K/2)*(distance(g1,g2)-r0)^2'
-        restraint_parameters = collections.OrderedDict([
-            ('K', spring_constant),
-            ('r0', well_radius)
-        ])
-        super(FlatBottomRestraintForceMixIn, self).__init__(energy_function, restraint_parameters,
-                                                            *args, **kwargs)
+        energy_function = "step(distance(g1,g2)-r0) * (K/2)*(distance(g1,g2)-r0)^2"
+        restraint_parameters = collections.OrderedDict(
+            [("K", spring_constant), ("r0", well_radius)]
+        )
+        super(FlatBottomRestraintForceMixIn, self).__init__(
+            energy_function, restraint_parameters, *args, **kwargs
+        )
 
     @property
     def spring_constant(self):
         """unit.openmm.Quantity: The spring constant K (units of energy/mole/length^2)."""
         # This works for both CustomBondForce and CustomCentroidBondForce.
         parameters = self.getBondParameters(0)[-1]
-        return parameters[0] * unit.kilojoule_per_mole/unit.nanometers**2
+        return parameters[0] * unit.kilojoule_per_mole / unit.nanometers**2
 
     @property
     def well_radius(self):
@@ -977,24 +1068,34 @@ class FlatBottomRestraintForceMixIn(object):
             (units of length).
 
         """
-        if potential_energy == 0.0*unit.kilojoules_per_mole:
-            raise ValueError('Cannot compute the distance at this potential energy.')
-        harmonic_radius = _compute_harmonic_radius(self.spring_constant, potential_energy)
+        if potential_energy == 0.0 * unit.kilojoules_per_mole:
+            raise ValueError("Cannot compute the distance at this potential energy.")
+        harmonic_radius = _compute_harmonic_radius(
+            self.spring_constant, potential_energy
+        )
         return self.well_radius + harmonic_radius
 
-    def _compute_restraint_volume(self, thermodynamic_state, square_well,
-                                  radius_cutoff, energy_cutoff):
+    def _compute_restraint_volume(
+        self, thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+    ):
         """Compute the restraint volume analytically."""
         # Check if we are using square well and we can avoid numerical integration.
         if square_well:
             _, r_max, _ = self._determine_integral_limits(
-                thermodynamic_state, radius_cutoff, energy_cutoff)
+                thermodynamic_state, radius_cutoff, energy_cutoff
+            )
             return _compute_sphere_volume(r_max)
-        return self._integrate_restraint_volume(thermodynamic_state, square_well,
-                                                radius_cutoff, energy_cutoff)
+        return self._integrate_restraint_volume(
+            thermodynamic_state, square_well, radius_cutoff, energy_cutoff
+        )
 
-    def _determine_integral_limits(self, thermodynamic_state, radius_cutoff,
-                                   energy_cutoff, potential_energy_func=None):
+    def _determine_integral_limits(
+        self,
+        thermodynamic_state,
+        radius_cutoff,
+        energy_cutoff,
+        potential_energy_func=None,
+    ):
         # If there is not a cutoff, integrate up to 100kT.
         if energy_cutoff is None:
             energy_cutoff = 100.0  # kT
@@ -1010,8 +1111,9 @@ class FlatBottomRestraintForceMixIn(object):
         return r_min, r_max, analytical_volume
 
 
-class FlatBottomRestraintForce(FlatBottomRestraintForceMixIn,
-                               RadiallySymmetricCentroidRestraintForce):
+class FlatBottomRestraintForce(
+    FlatBottomRestraintForceMixIn, RadiallySymmetricCentroidRestraintForce
+):
     """A restraint between the centroids of two groups of atoms using a flat potential well with harmonic walls.
 
     An alternative choice to receptor-ligand restraints that uses a flat
@@ -1062,12 +1164,14 @@ class FlatBottomRestraintForce(FlatBottomRestraintForceMixIn,
     controlling_parameter_name
 
     """
+
     # All the methods are provided by the mix-ins.
     pass
 
 
-class FlatBottomRestraintBondForce(FlatBottomRestraintForceMixIn,
-                                   RadiallySymmetricBondRestraintForce):
+class FlatBottomRestraintBondForce(
+    FlatBottomRestraintForceMixIn, RadiallySymmetricBondRestraintForce
+):
     """A restraint between two atoms using a flat potential well with harmonic walls.
 
     This is a version of ``FlatBottomRestraintForce`` that can be used with
@@ -1099,6 +1203,7 @@ class FlatBottomRestraintBondForce(FlatBottomRestraintForceMixIn,
     controlling_parameter_name
 
     """
+
     # All the methods are provided by the mix-ins.
     pass
 
@@ -1106,6 +1211,7 @@ class FlatBottomRestraintBondForce(FlatBottomRestraintForceMixIn,
 # =============================================================================
 # REACTION FIELD
 # =============================================================================
+
 
 class UnshiftedReactionFieldForce(openmm.CustomNonbondedForce):
     """A force modelling switched reaction-field electrostatics.
@@ -1125,15 +1231,27 @@ class UnshiftedReactionFieldForce(openmm.CustomNonbondedForce):
 
     """
 
-    def __init__(self, cutoff_distance=15*unit.angstroms, switch_width=1.0*unit.angstrom,
-                 reaction_field_dielectric=78.3):
-        k_rf = cutoff_distance**(-3) * (reaction_field_dielectric - 1.0) / (2.0*reaction_field_dielectric + 1.0)
+    def __init__(
+        self,
+        cutoff_distance=15 * unit.angstroms,
+        switch_width=1.0 * unit.angstrom,
+        reaction_field_dielectric=78.3,
+    ):
+        k_rf = (
+            cutoff_distance ** (-3)
+            * (reaction_field_dielectric - 1.0)
+            / (2.0 * reaction_field_dielectric + 1.0)
+        )
 
         # Energy expression omits c_rf constant term.
         energy_expression = "ONE_4PI_EPS0*chargeprod*(r^(-1) + k_rf*r^2);"
         energy_expression += "chargeprod = charge1*charge2;"
-        energy_expression += "k_rf = {:f};".format(k_rf.value_in_unit_system(unit.md_unit_system))
-        energy_expression += "ONE_4PI_EPS0 = {:f};".format(ONE_4PI_EPS0)  # already in OpenMM units
+        energy_expression += "k_rf = {:f};".format(
+            k_rf.value_in_unit_system(unit.md_unit_system)
+        )
+        energy_expression += "ONE_4PI_EPS0 = {:f};".format(
+            ONE_4PI_EPS0
+        )  # already in OpenMM units
 
         # Create CustomNonbondedForce.
         super(UnshiftedReactionFieldForce, self).__init__(energy_expression)
@@ -1152,7 +1270,7 @@ class UnshiftedReactionFieldForce(openmm.CustomNonbondedForce):
             self.setUseSwitchingFunction(False)
 
     @classmethod
-    def from_nonbonded_force(cls, nonbonded_force, switch_width=1.0*unit.angstrom):
+    def from_nonbonded_force(cls, nonbonded_force, switch_width=1.0 * unit.angstrom):
         """Copy constructor from an OpenMM `NonbondedForce`.
 
         The returned force has same cutoff distance and dielectric, and
@@ -1181,22 +1299,32 @@ class UnshiftedReactionFieldForce(openmm.CustomNonbondedForce):
         # OpenMM gives unitless values.
         cutoff_distance = nonbonded_force.getCutoffDistance()
         reaction_field_dielectric = nonbonded_force.getReactionFieldDielectric()
-        reaction_field_force = cls(cutoff_distance, switch_width, reaction_field_dielectric)
+        reaction_field_force = cls(
+            cutoff_distance, switch_width, reaction_field_dielectric
+        )
 
         # Set particle charges.
         for particle_index in range(nonbonded_force.getNumParticles()):
-            charge, sigma, epsilon = nonbonded_force.getParticleParameters(particle_index)
+            charge, sigma, epsilon = nonbonded_force.getParticleParameters(
+                particle_index
+            )
             reaction_field_force.addParticle([charge])
 
         # Add exclusions to CustomNonbondedForce.
         for exception_index in range(nonbonded_force.getNumExceptions()):
-            iatom, jatom, chargeprod, sigma, epsilon = nonbonded_force.getExceptionParameters(exception_index)
+            (
+                iatom,
+                jatom,
+                chargeprod,
+                sigma,
+                epsilon,
+            ) = nonbonded_force.getExceptionParameters(exception_index)
             reaction_field_force.addExclusion(iatom, jatom)
 
         return reaction_field_force
 
     @classmethod
-    def from_system(cls, system, switch_width=1.0*unit.angstrom):
+    def from_system(cls, system, switch_width=1.0 * unit.angstrom):
         """Copy constructor from the first OpenMM `NonbondedForce` in `system`.
 
         If multiple `NonbondedForce`s are found, an exception is raised.
@@ -1224,7 +1352,9 @@ class UnshiftedReactionFieldForce(openmm.CustomNonbondedForce):
         UnshiftedReactionField.from_nonbonded_force
 
         """
-        force_idx, nonbonded_force = find_forces(system, openmm.NonbondedForce, only_one=True)
+        force_idx, nonbonded_force = find_forces(
+            system, openmm.NonbondedForce, only_one=True
+        )
         return cls.from_nonbonded_force(nonbonded_force, switch_width)
 
 
@@ -1242,17 +1372,35 @@ class SwitchedReactionFieldForce(openmm.CustomNonbondedForce):
 
     """
 
-    def __init__(self, cutoff_distance=15*unit.angstroms, switch_width=1.0*unit.angstrom,
-                 reaction_field_dielectric=78.3):
-        k_rf = cutoff_distance**(-3) * (reaction_field_dielectric - 1.0) / (2.0*reaction_field_dielectric + 1.0)
-        c_rf = cutoff_distance**(-1) * (3*reaction_field_dielectric) / (2.0*reaction_field_dielectric + 1.0)
+    def __init__(
+        self,
+        cutoff_distance=15 * unit.angstroms,
+        switch_width=1.0 * unit.angstrom,
+        reaction_field_dielectric=78.3,
+    ):
+        k_rf = (
+            cutoff_distance ** (-3)
+            * (reaction_field_dielectric - 1.0)
+            / (2.0 * reaction_field_dielectric + 1.0)
+        )
+        c_rf = (
+            cutoff_distance ** (-1)
+            * (3 * reaction_field_dielectric)
+            / (2.0 * reaction_field_dielectric + 1.0)
+        )
 
         # Energy expression omits c_rf constant term.
         energy_expression = "ONE_4PI_EPS0*chargeprod*(r^(-1) + k_rf*r^2 - c_rf);"
         energy_expression += "chargeprod = charge1*charge2;"
-        energy_expression += "k_rf = {:f};".format(k_rf.value_in_unit_system(unit.md_unit_system))
-        energy_expression += "c_rf = {:f};".format(c_rf.value_in_unit_system(unit.md_unit_system))
-        energy_expression += "ONE_4PI_EPS0 = {:f};".format(ONE_4PI_EPS0)  # already in OpenMM units
+        energy_expression += "k_rf = {:f};".format(
+            k_rf.value_in_unit_system(unit.md_unit_system)
+        )
+        energy_expression += "c_rf = {:f};".format(
+            c_rf.value_in_unit_system(unit.md_unit_system)
+        )
+        energy_expression += "ONE_4PI_EPS0 = {:f};".format(
+            ONE_4PI_EPS0
+        )  # already in OpenMM units
 
         # Create CustomNonbondedForce.
         super(SwitchedReactionFieldForce, self).__init__(energy_expression)
@@ -1271,7 +1419,7 @@ class SwitchedReactionFieldForce(openmm.CustomNonbondedForce):
             self.setUseSwitchingFunction(False)
 
     @classmethod
-    def from_nonbonded_force(cls, nonbonded_force, switch_width=1.0*unit.angstrom):
+    def from_nonbonded_force(cls, nonbonded_force, switch_width=1.0 * unit.angstrom):
         """Copy constructor from an OpenMM `NonbondedForce`.
 
         The returned force has same cutoff distance and dielectric, and
@@ -1300,22 +1448,32 @@ class SwitchedReactionFieldForce(openmm.CustomNonbondedForce):
         # OpenMM gives unitless values.
         cutoff_distance = nonbonded_force.getCutoffDistance()
         reaction_field_dielectric = nonbonded_force.getReactionFieldDielectric()
-        reaction_field_force = cls(cutoff_distance, switch_width, reaction_field_dielectric)
+        reaction_field_force = cls(
+            cutoff_distance, switch_width, reaction_field_dielectric
+        )
 
         # Set particle charges.
         for particle_index in range(nonbonded_force.getNumParticles()):
-            charge, sigma, epsilon = nonbonded_force.getParticleParameters(particle_index)
+            charge, sigma, epsilon = nonbonded_force.getParticleParameters(
+                particle_index
+            )
             reaction_field_force.addParticle([charge])
 
         # Add exclusions to CustomNonbondedForce.
         for exception_index in range(nonbonded_force.getNumExceptions()):
-            iatom, jatom, chargeprod, sigma, epsilon = nonbonded_force.getExceptionParameters(exception_index)
+            (
+                iatom,
+                jatom,
+                chargeprod,
+                sigma,
+                epsilon,
+            ) = nonbonded_force.getExceptionParameters(exception_index)
             reaction_field_force.addExclusion(iatom, jatom)
 
         return reaction_field_force
 
     @classmethod
-    def from_system(cls, system, switch_width=1.0*unit.angstrom):
+    def from_system(cls, system, switch_width=1.0 * unit.angstrom):
         """Copy constructor from the first OpenMM `NonbondedForce` in `system`.
 
         If multiple `NonbondedForce`s are found, an exception is raised.
@@ -1343,10 +1501,13 @@ class SwitchedReactionFieldForce(openmm.CustomNonbondedForce):
         UnshiftedReactionField.from_nonbonded_force
 
         """
-        force_idx, nonbonded_force = find_forces(system, openmm.NonbondedForce, only_one=True)
+        force_idx, nonbonded_force = find_forces(
+            system, openmm.NonbondedForce, only_one=True
+        )
         return cls.from_nonbonded_force(nonbonded_force, switch_width)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

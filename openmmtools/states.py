@@ -23,6 +23,7 @@ import weakref
 import collections
 
 import numpy as np
+
 try:
     import openmm
     from openmm import unit
@@ -36,8 +37,10 @@ from openmmtools import utils, integrators, forces, constants
 # MODULE FUNCTIONS
 # =============================================================================
 
-def create_thermodynamic_state_protocol(system, protocol, constants=None,
-                                        composable_states=None):
+
+def create_thermodynamic_state_protocol(
+    system, protocol, constants=None, composable_states=None
+):
     """An optimized utility function to create a list of thermodynamic states.
 
     The method takes advantage of the fact that copying a thermodynamic state
@@ -80,11 +83,13 @@ def create_thermodynamic_state_protocol(system, protocol, constants=None,
     """
     # Check that all elements of the protocol have the same length.
     if len(protocol) == 0:
-        raise ValueError('No protocol has been specified.')
+        raise ValueError("No protocol has been specified.")
     values_lengths = [len(values) for values in protocol.values()]
     if len(set(values_lengths)) != 1:
-        raise ValueError('The protocol parameter values have different '
-                         'lengths!\n{}'.format(protocol))
+        raise ValueError(
+            "The protocol parameter values have different "
+            "lengths!\n{}".format(protocol)
+        )
     protocol_length = values_lengths[0]
 
     # Handle default value.
@@ -94,8 +99,9 @@ def create_thermodynamic_state_protocol(system, protocol, constants=None,
     # Check that the user didn't specify the same parameter as both
     # a constant and a protocol variable.
     if len(set(constants).intersection(set(protocol))) != 0:
-        raise ValueError('Some parameters have been specified both '
-                         'in constants and protocol.')
+        raise ValueError(
+            "Some parameters have been specified both " "in constants and protocol."
+        )
 
     # Augument protocol to include the constants values as well.
     for constant_parameter, value in constants.items():
@@ -105,13 +111,15 @@ def create_thermodynamic_state_protocol(system, protocol, constants=None,
     if isinstance(system, openmm.System):
         # Make sure the temperature is defined somewhere.
         try:
-            temperature = constants['temperature']
+            temperature = constants["temperature"]
         except KeyError:
             try:
-                temperature = protocol['temperature'][0]
+                temperature = protocol["temperature"][0]
             except KeyError:
-                raise ValueError('If a System is passed the list of '
-                                 'constants must specify the temperature.')
+                raise ValueError(
+                    "If a System is passed the list of "
+                    "constants must specify the temperature."
+                )
         thermo_state = ThermodynamicState(system, temperature=temperature)
     else:
         thermo_state = system
@@ -135,8 +143,10 @@ def create_thermodynamic_state_protocol(system, protocol, constants=None,
             if hasattr(state, lambda_key):
                 setattr(state, lambda_key, lambda_value)
             else:
-                raise AttributeError('{} object does not have protocol attribute '
-                                     '{}'.format(type(state), lambda_key))
+                raise AttributeError(
+                    "{} object does not have protocol attribute "
+                    "{}".format(type(state), lambda_key)
+                )
 
     return states
 
@@ -176,7 +186,8 @@ def reduced_potential_at_states(sampler_state, thermodynamic_states, context_cac
 
         # Compute and update the reduced potentials.
         compatible_energies = ThermodynamicState.reduced_potential_at_states(
-            context, compatible_group)
+            context, compatible_group
+        )
         for energy_idx, state_idx in enumerate(state_indices):
             reduced_potentials[state_idx] = compatible_energies[energy_idx]
 
@@ -244,7 +255,7 @@ def _box_vectors_volume(box_vectors):
 
     """
     a, b, c = box_vectors
-    box_matrix = np.array([a/a.unit, b/a.unit, c/a.unit])
+    box_matrix = np.array([a / a.unit, b / a.unit, c / a.unit])
     return np.linalg.det(box_matrix) * a.unit**3
 
 
@@ -268,6 +279,7 @@ def _box_vectors_area_xy(box_vectors):
 # =============================================================================
 # CUSTOM EXCEPTIONS
 # =============================================================================
+
 
 class ThermodynamicsError(Exception):
     """Custom ThermodynamicState error.
@@ -297,20 +309,22 @@ class ThermodynamicsError(Exception):
     """
 
     # TODO substitute this with enum when we drop Python 2.7 support
-    (MULTIPLE_THERMOSTATS,
-     NO_THERMOSTAT,
-     NONE_TEMPERATURE,
-     INCONSISTENT_THERMOSTAT,
-     MULTIPLE_BAROSTATS,
-     NO_BAROSTAT,
-     UNSUPPORTED_BAROSTAT,
-     UNSUPPORTED_ANISOTROPIC_BAROSTAT,
-     SURFACE_TENSION_NOT_SUPPORTED,
-     INCONSISTENT_BAROSTAT,
-     BAROSTATED_NONPERIODIC,
-     INCONSISTENT_INTEGRATOR,
-     INCOMPATIBLE_SAMPLER_STATE,
-     INCOMPATIBLE_ENSEMBLE) = range(14)
+    (
+        MULTIPLE_THERMOSTATS,
+        NO_THERMOSTAT,
+        NONE_TEMPERATURE,
+        INCONSISTENT_THERMOSTAT,
+        MULTIPLE_BAROSTATS,
+        NO_BAROSTAT,
+        UNSUPPORTED_BAROSTAT,
+        UNSUPPORTED_ANISOTROPIC_BAROSTAT,
+        SURFACE_TENSION_NOT_SUPPORTED,
+        INCONSISTENT_BAROSTAT,
+        BAROSTATED_NONPERIODIC,
+        INCONSISTENT_INTEGRATOR,
+        INCOMPATIBLE_SAMPLER_STATE,
+        INCOMPATIBLE_ENSEMBLE,
+    ) = range(14)
 
     error_messages = {
         MULTIPLE_THERMOSTATS: "System has multiple thermostats.",
@@ -319,16 +333,14 @@ class ThermodynamicsError(Exception):
         INCONSISTENT_THERMOSTAT: "System thermostat is inconsistent with thermodynamic state.",
         MULTIPLE_BAROSTATS: "System has multiple barostats.",
         UNSUPPORTED_BAROSTAT: "Found unsupported barostat {} in system.",
-        UNSUPPORTED_ANISOTROPIC_BAROSTAT:
-            "MonteCarloAnisotropicBarostat is only supported if the pressure along all scaled axes is the same.",
-        SURFACE_TENSION_NOT_SUPPORTED:
-            "Surface tension can only be set for states that have a system with a MonteCarloMembraneBarostat.",
+        UNSUPPORTED_ANISOTROPIC_BAROSTAT: "MonteCarloAnisotropicBarostat is only supported if the pressure along all scaled axes is the same.",
+        SURFACE_TENSION_NOT_SUPPORTED: "Surface tension can only be set for states that have a system with a MonteCarloMembraneBarostat.",
         NO_BAROSTAT: "System does not have a barostat specifying the pressure.",
         INCONSISTENT_BAROSTAT: "System barostat is inconsistent with thermodynamic state.",
         BAROSTATED_NONPERIODIC: "Non-periodic systems cannot have a barostat.",
         INCONSISTENT_INTEGRATOR: "Integrator is coupled to a heat bath at a different temperature.",
         INCOMPATIBLE_SAMPLER_STATE: "The sampler state has a different number of particles.",
-        INCOMPATIBLE_ENSEMBLE: "Cannot apply to a context in a different thermodynamic ensemble."
+        INCOMPATIBLE_ENSEMBLE: "Cannot apply to a context in a different thermodynamic ensemble.",
     }
 
     def __init__(self, code, *args):
@@ -363,12 +375,11 @@ class SamplerStateError(Exception):
     """
 
     # TODO substitute this with enum when we drop Python 2.7 support
-    (INCONSISTENT_VELOCITIES,
-     INCONSISTENT_POSITIONS) = range(2)
+    (INCONSISTENT_VELOCITIES, INCONSISTENT_POSITIONS) = range(2)
 
     error_messages = {
         INCONSISTENT_VELOCITIES: "Velocities have different length than positions.",
-        INCONSISTENT_POSITIONS: "Specified positions with inconsistent number of particles."
+        INCONSISTENT_POSITIONS: "Specified positions with inconsistent number of particles.",
     }
 
     def __init__(self, code, *args):
@@ -905,8 +916,14 @@ class ThermodynamicState(object):
         # Check compatibility.
         if n_particles != self.n_particles:
             raise ThermodynamicsError(ThermodynamicsError.INCOMPATIBLE_SAMPLER_STATE)
-        return self._compute_reduced_potential(potential_energy, self.temperature,
-                                               volume, self.pressure, area, self.surface_tension)
+        return self._compute_reduced_potential(
+            potential_energy,
+            self.temperature,
+            volume,
+            self.pressure,
+            area,
+            self.surface_tension,
+        )
 
     @classmethod
     def reduced_potential_at_states(cls, context, thermodynamic_states):
@@ -943,7 +960,7 @@ class ThermodynamicState(object):
         # Check that the states are compatible.
         for state_idx, state in enumerate(thermodynamic_states[:-1]):
             if not state.is_state_compatible(thermodynamic_states[state_idx + 1]):
-                raise ValueError('State {} is not compatible.')
+                raise ValueError("State {} is not compatible.")
 
         # In NPT, we'll need also the volume.
         is_npt = thermodynamic_states[0].pressure is not None
@@ -951,8 +968,10 @@ class ThermodynamicState(object):
         volume = None
         area_xy = None
 
-        energy_by_force_group = {force.getForceGroup(): 0.0*unit.kilocalories_per_mole
-                                 for force in context.getSystem().getForces()}
+        energy_by_force_group = {
+            force.getForceGroup(): 0.0 * unit.kilocalories_per_mole
+            for force in context.getSystem().getForces()
+        }
 
         # Create new cache for memoization.
         memo = {}
@@ -965,12 +984,18 @@ class ThermodynamicState(object):
             if state_idx == 0:
                 state.apply_to_context(context)
             else:
-                state._apply_to_context_in_state(context, thermodynamic_states[state_idx - 1])
+                state._apply_to_context_in_state(
+                    context, thermodynamic_states[state_idx - 1]
+                )
 
             # Compute the energy of all the groups to update.
             for force_group_idx in force_groups_to_compute:
-                openmm_state = context.getState(getEnergy=True, groups=2**force_group_idx)
-                energy_by_force_group[force_group_idx] = openmm_state.getPotentialEnergy()
+                openmm_state = context.getState(
+                    getEnergy=True, groups=2**force_group_idx
+                )
+                energy_by_force_group[
+                    force_group_idx
+                ] = openmm_state.getPotentialEnergy()
 
             # Compute volume if this is the first time we obtain a state.
             if is_npt and volume is None:
@@ -980,14 +1005,22 @@ class ThermodynamicState(object):
 
             # Compute the new total reduced potential.
             potential_energy = unit.sum(list(energy_by_force_group.values()))
-            reduced_potential = cls._compute_reduced_potential(potential_energy, state.temperature,
-                                                               volume, state.pressure, area_xy, state.surface_tension)
+            reduced_potential = cls._compute_reduced_potential(
+                potential_energy,
+                state.temperature,
+                volume,
+                state.pressure,
+                area_xy,
+                state.surface_tension,
+            )
             reduced_potentials[state_idx] = reduced_potential
 
             # Update groups to compute for next states.
             if state_idx < len(thermodynamic_states) - 1:
                 next_state = thermodynamic_states[state_idx + 1]
-                force_groups_to_compute = next_state._find_force_groups_to_update(context, state, memo)
+                force_groups_to_compute = next_state._find_force_groups_to_update(
+                    context, state, memo
+                )
 
         return reduced_potentials
 
@@ -1081,7 +1114,9 @@ class ThermodynamicState(object):
         # is independent on the parameters of the thermostat, so we add one
         # identical to self._standard_system. We don't care if the integrator's
         # temperature != self.temperature, so we set check_consistency=False.
-        if self._is_integrator_thermostated(context_integrator, check_consistency=False):
+        if self._is_integrator_thermostated(
+            context_integrator, check_consistency=False
+        ):
             thermostat = self._find_thermostat(self._standard_system)
             context_system.addForce(copy.deepcopy(thermostat))
 
@@ -1173,7 +1208,9 @@ class ThermodynamicState(object):
         # Create context.
         if platform is None:
             if platform_properties is not None:
-                raise ValueError("To set platform_properties, you need to also specify the platform.")
+                raise ValueError(
+                    "To set platform_properties, you need to also specify the platform."
+                )
             return openmm.Context(system, integrator)
         elif platform_properties is None:
             return openmm.Context(system, integrator, platform)
@@ -1225,7 +1262,12 @@ class ThermodynamicState(object):
         310.0
 
         """
-        self._set_context_barostat(context, update_pressure=True, update_temperature=True, update_surface_tension=True)
+        self._set_context_barostat(
+            context,
+            update_pressure=True,
+            update_temperature=True,
+            update_surface_tension=True,
+        )
         self._set_context_thermostat(context)
 
     # -------------------------------------------------------------------------
@@ -1236,9 +1278,10 @@ class ThermodynamicState(object):
         """Overwrite normal implementation to share standard system."""
         cls = self.__class__
         new_state = cls.__new__(cls)
-        new_state.__dict__.update({k: v for k, v in self.__dict__.items()
-                                   if k != '_standard_system'})
-        new_state.__dict__['_standard_system'] = self._standard_system
+        new_state.__dict__.update(
+            {k: v for k, v in self.__dict__.items() if k != "_standard_system"}
+        )
+        new_state.__dict__["_standard_system"] = self._standard_system
         return new_state
 
     def __deepcopy__(self, memo):
@@ -1247,12 +1290,12 @@ class ThermodynamicState(object):
         new_state = cls.__new__(cls)
         memo[id(self)] = new_state
         for k, v in self.__dict__.items():
-            if k != '_standard_system':
+            if k != "_standard_system":
                 new_state.__dict__[k] = copy.deepcopy(v, memo)
-        new_state.__dict__['_standard_system'] = self._standard_system
+        new_state.__dict__["_standard_system"] = self._standard_system
         return new_state
 
-    _ENCODING = 'utf-8'
+    _ENCODING = "utf-8"
 
     def __getstate__(self, skip_system=False):
         """Return a dictionary representation of the state.
@@ -1276,16 +1319,20 @@ class ThermodynamicState(object):
         if not skip_system:
             serialized_system = openmm.XmlSerializer.serialize(self._standard_system)
             serialized_system = zlib.compress(serialized_system.encode(self._ENCODING))
-        return dict(standard_system=serialized_system, temperature=self.temperature,
-                    pressure=self.pressure, surface_tension=self._surface_tension)
+        return dict(
+            standard_system=serialized_system,
+            temperature=self.temperature,
+            pressure=self.pressure,
+            surface_tension=self._surface_tension,
+        )
 
     def __setstate__(self, serialization):
         """Set the state from a dictionary representation."""
-        self._temperature = serialization['temperature']
-        self._pressure = serialization['pressure']
-        self._surface_tension = serialization['surface_tension']
+        self._temperature = serialization["temperature"]
+        self._pressure = serialization["pressure"]
+        self._surface_tension = serialization["surface_tension"]
 
-        serialized_system = serialization['standard_system']
+        serialized_system = serialization["standard_system"]
         # Decompress system, if need be
         try:
             serialized_system = zlib.decompress(serialized_system)
@@ -1302,7 +1349,9 @@ class ThermodynamicState(object):
 
         # Check first if we have already the system in the cache.
         try:
-            self._standard_system = self._standard_system_cache[self._standard_system_hash]
+            self._standard_system = self._standard_system_cache[
+                self._standard_system_hash
+            ]
         except KeyError:
             system = openmm.XmlSerializer.deserialize(serialized_system)
             self._standard_system_cache[self._standard_system_hash] = system
@@ -1312,7 +1361,9 @@ class ThermodynamicState(object):
     # Internal-usage: initialization
     # -------------------------------------------------------------------------
 
-    def _initialize(self, system, temperature=None, pressure=None, surface_tension=None):
+    def _initialize(
+        self, system, temperature=None, pressure=None, surface_tension=None
+    ):
         """Initialize the thermodynamic state."""
         # Avoid modifying the original system when setting temperature and pressure.
         system = copy.deepcopy(system)
@@ -1326,9 +1377,15 @@ class ThermodynamicState(object):
 
         # If surface tension is None, we try to infer the surface tension from the barostat.
         barostat_type = type(barostat)
-        if surface_tension is None and barostat_type == openmm.MonteCarloMembraneBarostat:
+        if (
+            surface_tension is None
+            and barostat_type == openmm.MonteCarloMembraneBarostat
+        ):
             self._surface_tension = barostat.getDefaultSurfaceTension()
-        elif surface_tension is not None and barostat_type != openmm.MonteCarloMembraneBarostat:
+        elif (
+            surface_tension is not None
+            and barostat_type != openmm.MonteCarloMembraneBarostat
+        ):
             raise ThermodynamicsError(ThermodynamicsError.INCOMPATIBLE_ENSEMBLE)
         else:
             self._surface_tension = surface_tension
@@ -1362,12 +1419,14 @@ class ThermodynamicState(object):
     # of standard system hashes possible. We set this to round floats
     # and use OpenMM units to avoid funniness due to precision errors
     # caused by unit conversion.
-    _STANDARD_PRESSURE = 1.0*unit.bar
-    _STANDARD_TEMPERATURE = 273.0*unit.kelvin
-    _STANDARD_SURFACE_TENSION = 0.0*unit.nanometer*unit.bar
+    _STANDARD_PRESSURE = 1.0 * unit.bar
+    _STANDARD_TEMPERATURE = 273.0 * unit.kelvin
+    _STANDARD_SURFACE_TENSION = 0.0 * unit.nanometer * unit.bar
 
-    _NONPERIODIC_NONBONDED_METHODS = {openmm.NonbondedForce.NoCutoff,
-                                      openmm.NonbondedForce.CutoffNonPeriodic}
+    _NONPERIODIC_NONBONDED_METHODS = {
+        openmm.NonbondedForce.NoCutoff,
+        openmm.NonbondedForce.CutoffNonPeriodic,
+    }
 
     # Shared cache of standard systems to minimize memory consumption
     # when simulating a lot of thermodynamic states. The cache holds
@@ -1422,8 +1481,9 @@ class ThermodynamicState(object):
         # checking the barostat temperature.
         if thermostat is None:
             raise TE(TE.NO_THERMOSTAT)
-        elif not utils.is_quantity_close(thermostat.getDefaultTemperature(),
-                                         self.temperature):
+        elif not utils.is_quantity_close(
+            thermostat.getDefaultTemperature(), self.temperature
+        ):
             raise TE(TE.INCONSISTENT_THERMOSTAT)
 
         # This line raises MULTIPLE_BAROSTATS and UNSUPPORTED_BAROSTAT.
@@ -1487,7 +1547,9 @@ class ThermodynamicState(object):
         if barostat is not None:
             self._set_barostat_pressure(barostat, self._STANDARD_PRESSURE)
             if isinstance(barostat, openmm.MonteCarloMembraneBarostat):
-                self._set_barostat_surface_tension(barostat, self._STANDARD_SURFACE_TENSION)
+                self._set_barostat_surface_tension(
+                    barostat, self._STANDARD_SURFACE_TENSION
+                )
             system.addForce(barostat)
 
     def _compute_standard_system_hash(self, standard_system):
@@ -1499,7 +1561,9 @@ class ThermodynamicState(object):
         """Update the standard system, its hash and the standard system cache."""
         self._standard_system_hash = self._compute_standard_system_hash(standard_system)
         try:
-            self._standard_system = self._standard_system_cache[self._standard_system_hash]
+            self._standard_system = self._standard_system_cache[
+                self._standard_system_hash
+            ]
         except KeyError:
             self._standard_system_cache[self._standard_system_hash] = standard_system
             self._standard_system = standard_system
@@ -1508,7 +1572,9 @@ class ThermodynamicState(object):
     # Internal-usage: context handling
     # -------------------------------------------------------------------------
 
-    def _set_context_barostat(self, context, update_pressure, update_temperature, update_surface_tension):
+    def _set_context_barostat(
+        self, context, update_pressure, update_temperature, update_surface_tension
+    ):
         """Set the barostat parameters in the Context."""
         barostat = self._find_barostat(context.getSystem())
 
@@ -1516,7 +1582,9 @@ class ThermodynamicState(object):
         if (barostat is None) != (self._pressure is None):
             raise ThermodynamicsError(ThermodynamicsError.INCOMPATIBLE_ENSEMBLE)
 
-        if (type(barostat) is openmm.MonteCarloMembraneBarostat) == (self._surface_tension is None):
+        if (type(barostat) is openmm.MonteCarloMembraneBarostat) == (
+            self._surface_tension is None
+        ):
             raise ThermodynamicsError(ThermodynamicsError.INCOMPATIBLE_ENSEMBLE)
 
         # No need to set the barostat if we are in NVT.
@@ -1530,7 +1598,9 @@ class ThermodynamicState(object):
 
         if self.surface_tension is not None and update_surface_tension:
             self._set_barostat_surface_tension(barostat, self.surface_tension)
-            self._set_barostat_surface_tension_in_context(barostat, self.surface_tension, context)
+            self._set_barostat_surface_tension_in_context(
+                barostat, self.surface_tension, context
+            )
 
         if update_temperature:
             self._set_barostat_temperature(barostat, self.temperature)
@@ -1538,8 +1608,9 @@ class ThermodynamicState(object):
             try:
                 context.setParameter(barostat.Temperature(), self.temperature)
             except AttributeError:  # OpenMM < 7.1
-                openmm_state = context.getState(getPositions=True, getVelocities=True,
-                                                getParameters=True)
+                openmm_state = context.getState(
+                    getPositions=True, getVelocities=True, getParameters=True
+                )
                 context.reinitialize()
                 context.setState(openmm_state)
 
@@ -1570,10 +1641,14 @@ class ThermodynamicState(object):
         """
         update_pressure = self.pressure != thermodynamic_state.pressure
         update_temperature = self.temperature != thermodynamic_state.temperature
-        update_surface_tension = self.surface_tension != thermodynamic_state.surface_tension
+        update_surface_tension = (
+            self.surface_tension != thermodynamic_state.surface_tension
+        )
 
         if update_pressure or update_temperature or update_surface_tension:
-            self._set_context_barostat(context, update_pressure, update_temperature, update_surface_tension)
+            self._set_context_barostat(
+                context, update_pressure, update_temperature, update_surface_tension
+            )
         if update_temperature:
             self._set_context_thermostat(context)
 
@@ -1616,8 +1691,9 @@ class ThermodynamicState(object):
                 pass
             else:
                 # Raise exception if the heat bath is at the wrong temperature.
-                if (check_consistency and
-                        not utils.is_quantity_close(temperature, self.temperature)):
+                if check_consistency and not utils.is_quantity_close(
+                    temperature, self.temperature
+                ):
                     err_code = ThermodynamicsError.INCONSISTENT_INTEGRATOR
                     raise ThermodynamicsError(err_code)
                 is_thermostated = True
@@ -1637,6 +1713,7 @@ class ThermodynamicState(object):
             True if the integrator is thermostated.
 
         """
+
         def set_temp(_integrator):
             try:
                 _integrator.setTemperature(self.temperature)
@@ -1654,7 +1731,11 @@ class ThermodynamicState(object):
     # Internal-usage: barostat handling
     # -------------------------------------------------------------------------
 
-    _SUPPORTED_BAROSTATS = {'MonteCarloBarostat', 'MonteCarloAnisotropicBarostat', 'MonteCarloMembraneBarostat'}
+    _SUPPORTED_BAROSTATS = {
+        "MonteCarloBarostat",
+        "MonteCarloAnisotropicBarostat",
+        "MonteCarloMembraneBarostat",
+    }
 
     @classmethod
     def _find_barostat(cls, system, get_index=False):
@@ -1674,24 +1755,41 @@ class ThermodynamicState(object):
 
         """
         try:
-            force_idx, barostat = forces.find_forces(system, '.*Barostat.*', only_one=True)
+            force_idx, barostat = forces.find_forces(
+                system, ".*Barostat.*", only_one=True
+            )
         except forces.MultipleForcesError:
             raise ThermodynamicsError(ThermodynamicsError.MULTIPLE_BAROSTATS)
         except forces.NoForceFoundError:
             force_idx, barostat = None, None
         else:
             if barostat.__class__.__name__ not in cls._SUPPORTED_BAROSTATS:
-                raise ThermodynamicsError(ThermodynamicsError.UNSUPPORTED_BAROSTAT,
-                                          barostat.__class__.__name__)
+                raise ThermodynamicsError(
+                    ThermodynamicsError.UNSUPPORTED_BAROSTAT,
+                    barostat.__class__.__name__,
+                )
             elif isinstance(barostat, openmm.MonteCarloAnisotropicBarostat):
                 # support only if pressure in all scaled directions is equal
                 pressures = barostat.getDefaultPressure().value_in_unit(unit.bar)
-                scaled = [barostat.getScaleX(), barostat.getScaleY(), barostat.getScaleY()]
+                scaled = [
+                    barostat.getScaleX(),
+                    barostat.getScaleY(),
+                    barostat.getScaleY(),
+                ]
                 if sum(scaled) == 0:
-                    raise ThermodynamicsError(ThermodynamicsError.UNSUPPORTED_ANISOTROPIC_BAROSTAT)
-                active_pressures = [pressure for pressure, active in zip(pressures, scaled) if active]
-                if any(abs(pressure - active_pressures[0]) > 0 for pressure in active_pressures):
-                    raise ThermodynamicsError(ThermodynamicsError.UNSUPPORTED_ANISOTROPIC_BAROSTAT)
+                    raise ThermodynamicsError(
+                        ThermodynamicsError.UNSUPPORTED_ANISOTROPIC_BAROSTAT
+                    )
+                active_pressures = [
+                    pressure for pressure, active in zip(pressures, scaled) if active
+                ]
+                if any(
+                    abs(pressure - active_pressures[0]) > 0
+                    for pressure in active_pressures
+                ):
+                    raise ThermodynamicsError(
+                        ThermodynamicsError.UNSUPPORTED_ANISOTROPIC_BAROSTAT
+                    )
         if get_index:
             return force_idx, barostat
         return barostat
@@ -1731,12 +1829,20 @@ class ThermodynamicState(object):
         barostat_surface_tension = self._get_barostat_surface_tension(barostat)
 
         is_consistent = self._is_barostat_type_consistent(barostat)
-        is_consistent = is_consistent and utils.is_quantity_close(barostat_temperature, self.temperature)
-        is_consistent = is_consistent and utils.is_quantity_close(barostat_pressure, self.pressure)
+        is_consistent = is_consistent and utils.is_quantity_close(
+            barostat_temperature, self.temperature
+        )
+        is_consistent = is_consistent and utils.is_quantity_close(
+            barostat_pressure, self.pressure
+        )
         if barostat is not None and self._surface_tension is not None:
-            is_consistent = is_consistent and utils.is_quantity_close(barostat_surface_tension, self._surface_tension)
+            is_consistent = is_consistent and utils.is_quantity_close(
+                barostat_surface_tension, self._surface_tension
+            )
         else:
-            is_consistent = is_consistent and (barostat_surface_tension == self._surface_tension) # both None
+            is_consistent = is_consistent and (
+                barostat_surface_tension == self._surface_tension
+            )  # both None
         return is_consistent
 
     def _set_system_pressure(self, system, pressure):
@@ -1779,16 +1885,18 @@ class ThermodynamicState(object):
         if isinstance(pressure, unit.Quantity):
             pressure = pressure.value_in_unit(unit.bar)
         if isinstance(barostat, openmm.MonteCarloAnisotropicBarostat):
-            barostat.setDefaultPressure(openmm.Vec3(pressure, pressure, pressure)*unit.bar)
+            barostat.setDefaultPressure(
+                openmm.Vec3(pressure, pressure, pressure) * unit.bar
+            )
         else:
-            barostat.setDefaultPressure(pressure*unit.bar)
+            barostat.setDefaultPressure(pressure * unit.bar)
 
     @staticmethod
     def _set_barostat_pressure_in_context(barostat, pressure, context):
         """Set barostat pressure."""
         if isinstance(barostat, openmm.MonteCarloAnisotropicBarostat):
             p = pressure.value_in_unit(unit.bar)
-            context.setParameter(barostat.Pressure(), openmm.Vec3(p, p, p)*unit.bar)
+            context.setParameter(barostat.Pressure(), openmm.Vec3(p, p, p) * unit.bar)
         else:
             context.setParameter(barostat.Pressure(), pressure)
 
@@ -1836,7 +1944,7 @@ class ThermodynamicState(object):
         """Set barostat surface tension."""
         # work around a unit conversion issue in openmm
         if isinstance(surface_tension, unit.Quantity):
-            surface_tension = surface_tension.value_in_unit(unit.nanometer*unit.bar)
+            surface_tension = surface_tension.value_in_unit(unit.nanometer * unit.bar)
         try:
             context.getParameter(barostat.SurfaceTension())
         except Exception:
@@ -1860,7 +1968,9 @@ class ThermodynamicState(object):
 
         """
         try:
-            force_idx, thermostat = forces.find_forces(system, '.*Thermostat.*', only_one=True)
+            force_idx, thermostat = forces.find_forces(
+                system, ".*Thermostat.*", only_one=True
+            )
         except forces.MultipleForcesError:
             raise ThermodynamicsError(ThermodynamicsError.MULTIPLE_THERMOSTATS)
         except forces.NoForceFoundError:
@@ -1893,7 +2003,7 @@ class ThermodynamicState(object):
         """
         thermostat = cls._find_thermostat(system)
         if thermostat is None:
-            thermostat = openmm.AndersenThermostat(temperature, 1.0/unit.picosecond)
+            thermostat = openmm.AndersenThermostat(temperature, 1.0 / unit.picosecond)
             system.addForce(thermostat)
         else:
             thermostat.setDefaultTemperature(temperature)
@@ -1907,7 +2017,14 @@ class ThermodynamicState(object):
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _compute_reduced_potential(potential_energy, temperature, volume, pressure, area_xy=None, surface_tension=None):
+    def _compute_reduced_potential(
+        potential_energy,
+        temperature,
+        volume,
+        pressure,
+        area_xy=None,
+        surface_tension=None,
+    ):
         """Convert potential energy into reduced potential."""
         beta = 1.0 / (unit.BOLTZMANN_CONSTANT_kB * temperature)
         reduced_potential = potential_energy / unit.AVOGADRO_CONSTANT_NA
@@ -1930,6 +2047,7 @@ class ThermodynamicState(object):
 # =============================================================================
 # SAMPLER STATE
 # =============================================================================
+
 
 class SamplerState(object):
     """State carrying the configurational properties of a system.
@@ -2030,10 +2148,12 @@ class SamplerState(object):
         self._potential_energy = None
         args = []
         for input in [positions, velocities, box_vectors]:
-            if isinstance(input, unit.Quantity) and not isinstance(input._value, np.ndarray):
-                args.append(np.array(input/input.unit)*input.unit)
+            if isinstance(input, unit.Quantity) and not isinstance(
+                input._value, np.ndarray
+            ):
+                args.append(np.array(input / input.unit) * input.unit)
             else:
-               args.append(copy.deepcopy(input))
+                args.append(copy.deepcopy(input))
         self._initialize(*args)
 
     @classmethod
@@ -2063,10 +2183,13 @@ class SamplerState(object):
 
         """
         sampler_state = cls([])
-        sampler_state._read_context_state(context_state, check_consistency=False,
-                                          ignore_positions=False,
-                                          ignore_velocities=False,
-                                          ignore_collective_variables=ignore_collective_variables)
+        sampler_state._read_context_state(
+            context_state,
+            check_consistency=False,
+            ignore_positions=False,
+            ignore_velocities=False,
+            ignore_collective_variables=ignore_collective_variables,
+        )
         return sampler_state
 
     @property
@@ -2138,7 +2261,9 @@ class SamplerState(object):
     @potential_energy.setter
     def potential_energy(self, new_value):
         if new_value is not None:
-            raise AttributeError("Cannot set potential energy as it is a function of Context")
+            raise AttributeError(
+                "Cannot set potential energy as it is a function of Context"
+            )
         self._potential_energy = None
 
     @property
@@ -2151,7 +2276,9 @@ class SamplerState(object):
     @kinetic_energy.setter
     def kinetic_energy(self, new_value):
         if new_value is not None:
-            raise AttributeError("Cannot set kinetic energy as it is a function of Context")
+            raise AttributeError(
+                "Cannot set kinetic energy as it is a function of Context"
+            )
         self._kinetic_energy = None
 
     @property
@@ -2164,7 +2291,9 @@ class SamplerState(object):
     @collective_variables.setter
     def collective_variables(self, new_value):
         if new_value is not None:
-            raise AttributeError("Cannot set collective variables as it is a function of Context")
+            raise AttributeError(
+                "Cannot set collective variables as it is a function of Context"
+            )
         self._collective_variables = new_value
 
     @property
@@ -2213,8 +2342,13 @@ class SamplerState(object):
         is_compatible = self.n_particles == context.getSystem().getNumParticles()
         return is_compatible
 
-    def update_from_context(self, context_state, ignore_positions=False, ignore_velocities=False,
-                            ignore_collective_variables=False):
+    def update_from_context(
+        self,
+        context_state,
+        ignore_positions=False,
+        ignore_velocities=False,
+        ignore_collective_variables=False,
+    ):
         """Read the state from the given Context or State object.
 
         The context must be compatible. Use SamplerState.from_context
@@ -2250,10 +2384,13 @@ class SamplerState(object):
             setting ignore_collective_variables
 
         """
-        self._read_context_state(context_state, check_consistency=True,
-                                 ignore_positions=ignore_positions,
-                                 ignore_velocities=ignore_velocities,
-                                 ignore_collective_variables=ignore_collective_variables)
+        self._read_context_state(
+            context_state,
+            check_consistency=True,
+            ignore_positions=ignore_positions,
+            ignore_velocities=ignore_velocities,
+            ignore_collective_variables=ignore_collective_variables,
+        )
 
     def apply_to_context(self, context, ignore_velocities=False):
         """Set the context state.
@@ -2288,8 +2425,9 @@ class SamplerState(object):
         are nan.
 
         """
-        if (self.potential_energy is not None and
-                np.isnan(self.potential_energy.value_in_unit(self.potential_energy.unit))):
+        if self.potential_energy is not None and np.isnan(
+            self.potential_energy.value_in_unit(self.potential_energy.unit)
+        ):
             return True
         if np.any(np.isnan(self._positions)):
             return True
@@ -2303,18 +2441,26 @@ class SamplerState(object):
             # Here we don't need to copy since we instantiate a new array.
             pos_value = self._positions[item].value_in_unit(self._positions.unit)
             new_positions = unit.Quantity(np.array([pos_value]), self._positions.unit)
-            sampler_state._set_positions(new_positions, from_context=False, check_consistency=False)
+            sampler_state._set_positions(
+                new_positions, from_context=False, check_consistency=False
+            )
             if self._velocities is not None:
                 vel_value = self._velocities[item].value_in_unit(self._velocities.unit)
-                new_velocities = unit.Quantity(np.array([vel_value]), self._velocities.unit)
+                new_velocities = unit.Quantity(
+                    np.array([vel_value]), self._velocities.unit
+                )
                 sampler_state._set_velocities(new_velocities, from_context=False)
         else:  # Assume slice or sequence.
             # Copy original values to avoid side effects.
-            sampler_state._set_positions(copy.deepcopy(self._positions[item]),
-                                         from_context=False, check_consistency=False)
+            sampler_state._set_positions(
+                copy.deepcopy(self._positions[item]),
+                from_context=False,
+                check_consistency=False,
+            )
             if self._velocities is not None:
-                sampler_state._set_velocities(copy.deepcopy(self._velocities[item].copy()),
-                                              from_context=False)
+                sampler_state._set_velocities(
+                    copy.deepcopy(self._velocities[item].copy()), from_context=False
+                )
 
         # Copy box vectors.
         sampler_state.box_vectors = copy.deepcopy(self.box_vectors)
@@ -2337,10 +2483,12 @@ class SamplerState(object):
         """
         velocities = None if ignore_velocities else self.velocities
         serialization = dict(
-            positions=self.positions, velocities=velocities,
-            box_vectors=self.box_vectors, potential_energy=self.potential_energy,
+            positions=self.positions,
+            velocities=velocities,
+            box_vectors=self.box_vectors,
+            potential_energy=self.potential_energy,
             kinetic_energy=self.kinetic_energy,
-            collective_variables=self.collective_variables
+            collective_variables=self.collective_variables,
         )
         return serialization
 
@@ -2353,16 +2501,23 @@ class SamplerState(object):
             If True and the ``SamplerState`` has already velocities
             defined, this does not overwrite the velocities.
         """
-        if ignore_velocities and '_velocities' in self.__dict__:
-            serialization['velocities'] = self.velocities
+        if ignore_velocities and "_velocities" in self.__dict__:
+            serialization["velocities"] = self.velocities
         self._initialize(**serialization)
 
     # -------------------------------------------------------------------------
     # Internal-usage
     # -------------------------------------------------------------------------
 
-    def _initialize(self, positions, velocities, box_vectors,
-                    potential_energy=None, kinetic_energy=None, collective_variables=None):
+    def _initialize(
+        self,
+        positions,
+        velocities,
+        box_vectors,
+        potential_energy=None,
+        kinetic_energy=None,
+        collective_variables=None,
+    ):
         """Initialize the sampler state."""
         self._set_positions(positions, from_context=False, check_consistency=False)
         self.velocities = velocities  # Checks consistency and units.
@@ -2373,7 +2528,9 @@ class SamplerState(object):
 
     def _set_positions(self, new_positions, from_context, check_consistency):
         """Set the positions without checking for consistency."""
-        if check_consistency and (new_positions is None or len(new_positions) != self.n_particles):
+        if check_consistency and (
+            new_positions is None or len(new_positions) != self.n_particles
+        ):
             raise SamplerStateError(SamplerStateError.INCONSISTENT_POSITIONS)
 
         if from_context:
@@ -2394,7 +2551,7 @@ class SamplerState(object):
         """Set the velocities."""
         if from_context:
             self._unitless_velocities_cache = new_velocities._value
-            assert new_velocities.unit == unit.nanometer/unit.picoseconds
+            assert new_velocities.unit == unit.nanometer / unit.picoseconds
         else:
             if new_velocities is not None and self.n_particles != len(new_velocities):
                 raise SamplerStateError(SamplerStateError.INCONSISTENT_VELOCITIES)
@@ -2411,7 +2568,9 @@ class SamplerState(object):
     def _unitless_positions(self):
         """Keeps a cache of unitless positions."""
         if self._unitless_positions_cache is None or self._positions.has_changed:
-            self._unitless_positions_cache = self.positions.value_in_unit_system(unit.md_unit_system)
+            self._unitless_positions_cache = self.positions.value_in_unit_system(
+                unit.md_unit_system
+            )
         if self._positions.has_changed:
             self._positions.has_changed = False
             self._potential_energy = None
@@ -2423,16 +2582,22 @@ class SamplerState(object):
         if self._velocities is None:
             return None
         if self._unitless_velocities_cache is None or self._velocities.has_changed:
-            self._unitless_velocities_cache = self._velocities.value_in_unit_system(unit.md_unit_system)
+            self._unitless_velocities_cache = self._velocities.value_in_unit_system(
+                unit.md_unit_system
+            )
         if self._velocities.has_changed:
             self._velocities.has_changed = False
             self._kinetic_energy = None
         return self._unitless_velocities_cache
 
-    def _read_context_state(self, context_state, check_consistency,
-                            ignore_positions,
-                            ignore_velocities,
-                            ignore_collective_variables):
+    def _read_context_state(
+        self,
+        context_state,
+        check_consistency,
+        ignore_positions,
+        ignore_velocities,
+        ignore_collective_variables,
+    ):
         """Read the Context state.
 
         Parameters
@@ -2463,15 +2628,19 @@ class SamplerState(object):
         """
         if isinstance(context_state, openmm.Context):
             system = context_state.getSystem()
-            openmm_state = context_state.getState(getPositions=not ignore_positions,
-                                                  getVelocities=not ignore_velocities,
-                                                  getEnergy=not (ignore_velocities and ignore_positions),
-                                                  enforcePeriodicBox=system.usesPeriodicBoundaryConditions())
+            openmm_state = context_state.getState(
+                getPositions=not ignore_positions,
+                getVelocities=not ignore_velocities,
+                getEnergy=not (ignore_velocities and ignore_positions),
+                enforcePeriodicBox=system.usesPeriodicBoundaryConditions(),
+            )
         else:
             if not ignore_collective_variables:
-                raise SamplerStateError("State objects must have ignore_collective_variables=True because they "
-                                        "don't track CV's and would be ambiguous between a System with no "
-                                        "collective variables.")
+                raise SamplerStateError(
+                    "State objects must have ignore_collective_variables=True because they "
+                    "don't track CV's and would be ambiguous between a System with no "
+                    "collective variables."
+                )
             openmm_state = context_state
 
         # We assign positions first, since the velocities
@@ -2480,7 +2649,9 @@ class SamplerState(object):
         # after positions and velocities or they'll be reset.
         if not ignore_positions:
             positions = openmm_state.getPositions(asNumpy=True)
-            self._set_positions(positions, from_context=True, check_consistency=check_consistency)
+            self._set_positions(
+                positions, from_context=True, check_consistency=check_consistency
+            )
             self._potential_energy = openmm_state.getPotentialEnergy()
         if not ignore_velocities:
             velocities = openmm_state.getVelocities(asNumpy=True)
@@ -2513,7 +2684,9 @@ class SamplerState(object):
                 pass
         # Trap no variables found (empty dict), return None
         # Cast defaultdict back to dict
-        self._collective_variables = dict(collective_variables) if collective_variables else None
+        self._collective_variables = (
+            dict(collective_variables) if collective_variables else None
+        )
 
     @property
     def _are_positions_valid(self):
@@ -2525,8 +2698,10 @@ class SamplerState(object):
 # COMPOUND THERMODYNAMIC STATE
 # =============================================================================
 
+
 class ComposableStateError(Exception):
     """Error raised by a ComposableState."""
+
     pass
 
 
@@ -2770,6 +2945,7 @@ class CompoundThermodynamicState(ThermodynamicState):
     1.0
 
     """
+
     def __init__(self, thermodynamic_state, composable_states):
         # Check that composable states expose the correct interface.
         for composable_state in composable_states:
@@ -2867,7 +3043,9 @@ class CompoundThermodynamicState(ThermodynamicState):
         # handle the case in which one of the composable states
         # raises ComposableStateError when standardizing the context system.
         try:
-            return super(CompoundThermodynamicState, self).is_context_compatible(context)
+            return super(CompoundThermodynamicState, self).is_context_compatible(
+                context
+            )
         except ComposableStateError:
             return False
 
@@ -2890,6 +3068,7 @@ class CompoundThermodynamicState(ThermodynamicState):
                     old_state = copy.deepcopy(composable_state)
                     func(*args, **kwargs)
                     self._on_setattr_callback(composable_state, name, old_state)
+
             return _setter_decorator
 
         # Called only if the attribute couldn't be found in __dict__.
@@ -2908,16 +3087,21 @@ class CompoundThermodynamicState(ThermodynamicState):
         if len(attrs) > 0:
             # If this is a setter, we need to set the attribute in all states
             # and ensure that the callback is called in each of them.
-            if name.startswith('set_'):
+            if name.startswith("set_"):
                 # Decorate the setter so that _on_setattr is called after the
                 # attribute is modified. This also reduces the calls to multiple
                 # setter to a single function.
                 attr = setter_decorator(attrs, composable_states)
             else:
-                if len(attrs) > 1 and not all(np.isclose(attrs[0], a) for a in attrs[1:]):
-                    raise RuntimeError('The composable states of {} expose the same '
-                                       'attribute with different values: {}'.format(
-                        self.__class__.__name__, set(attrs)))
+                if len(attrs) > 1 and not all(
+                    np.isclose(attrs[0], a) for a in attrs[1:]
+                ):
+                    raise RuntimeError(
+                        "The composable states of {} expose the same "
+                        "attribute with different values: {}".format(
+                            self.__class__.__name__, set(attrs)
+                        )
+                    )
                 attr = attrs[0]
             return attr
 
@@ -2926,7 +3110,7 @@ class CompoundThermodynamicState(ThermodynamicState):
 
     def __setattr__(self, name, value):
         # Add new attribute to CompoundThermodynamicState.
-        if '_composable_states' not in self.__dict__:
+        if "_composable_states" not in self.__dict__:
             super(CompoundThermodynamicState, self).__setattr__(name, value)
 
         # Update existing ThermodynamicState attribute (check ancestors).
@@ -2965,20 +3149,24 @@ class CompoundThermodynamicState(ThermodynamicState):
         serialized_thermodynamic_state = utils.serialize(thermodynamic_state, **kwargs)
 
         # Serialize composable states.
-        serialized_composable_states = [utils.serialize(state)
-                                        for state in self._composable_states]
+        serialized_composable_states = [
+            utils.serialize(state) for state in self._composable_states
+        ]
 
-        return dict(thermodynamic_state=serialized_thermodynamic_state,
-                    composable_states=serialized_composable_states)
+        return dict(
+            thermodynamic_state=serialized_thermodynamic_state,
+            composable_states=serialized_composable_states,
+        )
 
     def __setstate__(self, serialization):
         """Set the state from a dictionary representation."""
-        serialized_thermodynamic_state = serialization['thermodynamic_state']
-        serialized_composable_states = serialization['composable_states']
+        serialized_thermodynamic_state = serialization["thermodynamic_state"]
+        serialized_composable_states = serialization["composable_states"]
         thermodynamic_state = utils.deserialize(serialized_thermodynamic_state)
         self.__dict__ = thermodynamic_state.__dict__
-        self._composable_states = [utils.deserialize(state)
-                                   for state in serialized_composable_states]
+        self._composable_states = [
+            utils.deserialize(state) for state in serialized_composable_states
+        ]
 
     # -------------------------------------------------------------------------
     # Internal-usage
@@ -3004,19 +3192,28 @@ class CompoundThermodynamicState(ThermodynamicState):
         for composable_state in self._composable_states:
             composable_state._standardize_system(system)
 
-    def _on_setattr_callback(self, composable_state, attribute_name, old_composable_state):
+    def _on_setattr_callback(
+        self, composable_state, attribute_name, old_composable_state
+    ):
         """Updates the standard system (and hash) after __setattr__."""
         try:
-            change_standard_system = composable_state._on_setattr(self._standard_system, attribute_name, old_composable_state)
+            change_standard_system = composable_state._on_setattr(
+                self._standard_system, attribute_name, old_composable_state
+            )
         except TypeError:
-            change_standard_system = composable_state._on_setattr(self._standard_system, attribute_name)
+            change_standard_system = composable_state._on_setattr(
+                self._standard_system, attribute_name
+            )
             # TODO Drop support for the old signature and remove deprecation warning from 0.17 on.
             import warnings
-            old_signature = '_on_setattr(self, standard_system, attribute_name)'
-            new_signature = old_signature[:-1] + ', old_composable_state)'
-            warnings.warn('The signature IComposableState.{} has been deprecated, '
-                          'and future versions of openmmtools will support only the '
-                          'new one: {}.'.format(old_signature, new_signature))
+
+            old_signature = "_on_setattr(self, standard_system, attribute_name)"
+            new_signature = old_signature[:-1] + ", old_composable_state)"
+            warnings.warn(
+                "The signature IComposableState.{} has been deprecated, "
+                "and future versions of openmmtools will support only the "
+                "new one: {}.".format(old_signature, new_signature)
+            )
         if change_standard_system:
             new_standard_system = copy.deepcopy(self._standard_system)
             composable_state.apply_to_system(new_standard_system)
@@ -3024,7 +3221,9 @@ class CompoundThermodynamicState(ThermodynamicState):
             self._update_standard_system(new_standard_system)
 
     def _apply_to_context_in_state(self, context, thermodynamic_state):
-        super(CompoundThermodynamicState, self)._apply_to_context_in_state(context, thermodynamic_state)
+        super(CompoundThermodynamicState, self)._apply_to_context_in_state(
+            context, thermodynamic_state
+        )
         for s in self._composable_states:
             s.apply_to_context(context)
 
@@ -3038,12 +3237,18 @@ class CompoundThermodynamicState(ThermodynamicState):
         if len(memo) == 0:
             memo.update({i: {} for i in range(len(self._composable_states))})
         # Find force group to update for parent class.
-        force_groups = super(CompoundThermodynamicState, self)._find_force_groups_to_update(
-            context, current_context_state, memo)
+        force_groups = super(
+            CompoundThermodynamicState, self
+        )._find_force_groups_to_update(context, current_context_state, memo)
         # Find force group to update for composable states.
-        for composable_state_idx, composable_state in enumerate(self._composable_states):
-            force_groups.update(composable_state._find_force_groups_to_update(
-                context, current_context_state, memo[composable_state_idx]))
+        for composable_state_idx, composable_state in enumerate(
+            self._composable_states
+        ):
+            force_groups.update(
+                composable_state._find_force_groups_to_update(
+                    context, current_context_state, memo[composable_state_idx]
+                )
+            )
         return force_groups
 
 
@@ -3051,8 +3256,10 @@ class CompoundThermodynamicState(ThermodynamicState):
 # GLOBAL PARAMETER STATE
 # =============================================================================
 
+
 class GlobalParameterError(ComposableStateError):
     """Exception raised by ``GlobalParameterState``."""
+
     pass
 
 
@@ -3091,6 +3298,7 @@ class GlobalParameterFunction(object):
     0.5
 
     """
+
     def __init__(self, expression):
         self._expression = expression
 
@@ -3303,11 +3511,16 @@ class GlobalParameterState(object):
 
         """
         state_parameters = {}
-        for force, parameter_name, parameter_id in cls._get_system_controlled_parameters(
-                system, parameters_name_suffix):
+        for (
+            force,
+            parameter_name,
+            parameter_id,
+        ) in cls._get_system_controlled_parameters(system, parameters_name_suffix):
 
             if parameter_id >= force.getNumGlobalParameters():
-                raise GlobalParameterStateError(f'Attempted to access system parameter {parameter_name} (id {parameter_id}) that does not exist in {force.__class__.__name__}')
+                raise GlobalParameterStateError(
+                    f"Attempted to access system parameter {parameter_name} (id {parameter_id}) that does not exist in {force.__class__.__name__}"
+                )
 
             parameter_value = force.getGlobalParameterDefaultValue(parameter_id)
 
@@ -3315,16 +3528,22 @@ class GlobalParameterState(object):
             # the parameter with a different value.
             if parameter_name in state_parameters:
                 if state_parameters[parameter_name] != parameter_value:
-                    err_msg = ('Parameter {} has been found twice (Force {}) with two values: '
-                               '{} and {}').format(parameter_name, force.__class__.__name__,
-                                                   parameter_value, state_parameters[parameter_name])
+                    err_msg = (
+                        "Parameter {} has been found twice (Force {}) with two values: "
+                        "{} and {}"
+                    ).format(
+                        parameter_name,
+                        force.__class__.__name__,
+                        parameter_value,
+                        state_parameters[parameter_name],
+                    )
                     raise cls._GLOBAL_PARAMETER_ERROR(err_msg)
             else:
                 state_parameters[parameter_name] = parameter_value
 
         # Check that the system can be controlled by this state..
         if len(state_parameters) == 0:
-            err_msg = 'System has no global parameters controlled by this state.'
+            err_msg = "System has no global parameters controlled by this state."
             raise cls._GLOBAL_PARAMETER_ERROR(err_msg)
 
         # Create and return the GlobalParameterState. The constructor of
@@ -3360,7 +3579,7 @@ class GlobalParameterState(object):
         try:
             variable_value = self._function_variables[variable_name]
         except KeyError:
-            err_msg = 'Unknown function variable {}'.format(variable_name)
+            err_msg = "Unknown function variable {}".format(variable_name)
             raise self._GLOBAL_PARAMETER_ERROR(err_msg)
         return variable_value
 
@@ -3381,12 +3600,14 @@ class GlobalParameterState(object):
         """
         forbidden_variable_names = set(self._parameters)
         if variable_name in forbidden_variable_names:
-            err_msg = ('Cannot have an function variable with the same name '
-                       'of the predefined global parameter {}.'.format(variable_name))
+            err_msg = (
+                "Cannot have an function variable with the same name "
+                "of the predefined global parameter {}.".format(variable_name)
+            )
             raise self._GLOBAL_PARAMETER_ERROR(err_msg)
         # Check that the new value is a scalar,
         if not (np.isreal(new_value) and np.isscalar(new_value)):
-            err_msg = 'Only integers and floats can be assigned to a function variable.'
+            err_msg = "Only integers and floats can be assigned to a function variable."
             raise self._GLOBAL_PARAMETER_ERROR(err_msg)
         self._function_variables[variable_name] = new_value
 
@@ -3451,6 +3672,7 @@ class GlobalParameterState(object):
             decorator.
 
         """
+
         def __init__(self, parameter_name, standard_value, validator=None):
             self.parameter_name = parameter_name
             self.standard_value = standard_value
@@ -3474,9 +3696,12 @@ class GlobalParameterState(object):
             name is not accessible.
             """
             if instance._parameters_name_suffix is not None:
-                suffixed_parameter_name = self.parameter_name + '_' + instance._parameters_name_suffix
-                err_msg = 'This state does not control {} but {}.'.format(
-                    self.parameter_name, suffixed_parameter_name)
+                suffixed_parameter_name = (
+                    self.parameter_name + "_" + instance._parameters_name_suffix
+                )
+                err_msg = "This state does not control {} but {}.".format(
+                    self.parameter_name, suffixed_parameter_name
+                )
                 raise AttributeError(err_msg)
 
     # -------------------------------------------------------------------------
@@ -3499,25 +3724,36 @@ class GlobalParameterState(object):
 
         """
         parameters_applied = set()
-        for force, parameter_name, parameter_id in self._get_system_controlled_parameters(
-                system, self._parameters_name_suffix):
+        for (
+            force,
+            parameter_name,
+            parameter_id,
+        ) in self._get_system_controlled_parameters(
+            system, self._parameters_name_suffix
+        ):
             parameter_value = getattr(self, parameter_name)
             if parameter_value is None:
-                err_msg = 'The system parameter {} is not defined in this state.'
+                err_msg = "The system parameter {} is not defined in this state."
                 raise self._GLOBAL_PARAMETER_ERROR(err_msg.format(parameter_name))
             else:
 
                 if parameter_id >= force.getNumGlobalParameters():
-                    raise GlobalParameterStateError(f'Attempted to access system parameter {parameter_name} (id {parameter_id}) that does not exist in {force.__class__.__name__}')
+                    raise GlobalParameterStateError(
+                        f"Attempted to access system parameter {parameter_name} (id {parameter_id}) that does not exist in {force.__class__.__name__}"
+                    )
 
                 parameters_applied.add(parameter_name)
                 force.setGlobalParameterDefaultValue(parameter_id, parameter_value)
 
         # Check that we set all the defined parameters.
-        for parameter_name in self._get_controlled_parameters(self._parameters_name_suffix):
-            if (self._parameters[parameter_name] is not None and
-                    parameter_name not in parameters_applied):
-                err_msg = 'Could not find global parameter {} in the system.'
+        for parameter_name in self._get_controlled_parameters(
+            self._parameters_name_suffix
+        ):
+            if (
+                self._parameters[parameter_name] is not None
+                and parameter_name not in parameters_applied
+            ):
+                err_msg = "Could not find global parameter {} in the system."
                 raise self._GLOBAL_PARAMETER_ERROR(err_msg.format(parameter_name))
 
     def check_system_consistency(self, system):
@@ -3541,11 +3777,15 @@ class GlobalParameterState(object):
 
         # Check if parameters are all the same.
         if self != system_state:
-            err_msg = ('Consistency check failed:\n'
-                       '\tSystem parameters {}\n'
-                       '\t{} parameters {}')
+            err_msg = (
+                "Consistency check failed:\n"
+                "\tSystem parameters {}\n"
+                "\t{} parameters {}"
+            )
             class_name = self.__class__.__name__
-            raise self._GLOBAL_PARAMETER_ERROR(err_msg.format(system_state, class_name, self))
+            raise self._GLOBAL_PARAMETER_ERROR(
+                err_msg.format(system_state, class_name, self)
+            )
 
     def apply_to_context(self, context):
         """Put the Context into this state.
@@ -3569,16 +3809,17 @@ class GlobalParameterState(object):
             if parameter_value is None:
                 # Check that Context does not have this parameter.
                 if parameter_name in context_parameters:
-                    err_msg = 'Context has parameter {} which is undefined in this state.'
+                    err_msg = (
+                        "Context has parameter {} which is undefined in this state."
+                    )
                     raise self._GLOBAL_PARAMETER_ERROR(err_msg.format(parameter_name))
                 continue
 
             try:
                 context.setParameter(parameter_name, parameter_value)
             except Exception:
-                err_msg = 'Could not find parameter {} in context'
+                err_msg = "Could not find parameter {} in context"
                 raise self._GLOBAL_PARAMETER_ERROR(err_msg.format(parameter_name))
-
 
     def _standardize_system(self, system):
         """Standardize the given system.
@@ -3598,7 +3839,9 @@ class GlobalParameterState(object):
         """
         # Collect all the global parameters' standard values.
         standard_values = {}
-        controlled_parameters = self._get_controlled_parameters(self._parameters_name_suffix)
+        controlled_parameters = self._get_controlled_parameters(
+            self._parameters_name_suffix
+        )
         for parameter_name, parameter_descriptor in controlled_parameters.items():
             standard_values[parameter_name] = parameter_descriptor.standard_value
 
@@ -3636,13 +3879,17 @@ class GlobalParameterState(object):
         old_attribute_value = getattr(old_global_parameter_state, attribute_name)
         new_attribute_value = getattr(self, attribute_name)
         if (old_attribute_value is None) != (new_attribute_value is None):
-            err_msg = 'Cannot set the parameter {} in the system from {} to {}'.format(
-                attribute_name, old_attribute_value, new_attribute_value)
+            err_msg = "Cannot set the parameter {} in the system from {} to {}".format(
+                attribute_name, old_attribute_value, new_attribute_value
+            )
             # Set back old value to maintain a consistent state in case the exception
             # is catched. If this attribute was associated to a GlobalParameterFunction,
             # we need to retrieve the original function object before setting.
-            old_attribute_value = old_global_parameter_state._get_global_parameter_value(
-                attribute_name, resolve_function=None)
+            old_attribute_value = (
+                old_global_parameter_state._get_global_parameter_value(
+                    attribute_name, resolve_function=None
+                )
+            )
             setattr(self, attribute_name, old_attribute_value)
             raise self._GLOBAL_PARAMETER_ERROR(err_msg)
         return False
@@ -3673,7 +3920,9 @@ class GlobalParameterState(object):
         # We create a dictionary "memo" mapping parameter_name -> list of force groups to update.
         if len(memo) == 0:
             system = context.getSystem()
-            system_parameters = self._get_system_controlled_parameters(system, self._parameters_name_suffix)
+            system_parameters = self._get_system_controlled_parameters(
+                system, self._parameters_name_suffix
+            )
             for force, parameter_name, _ in system_parameters:
                 # Keep track of valid parameters only.
                 if self._parameters[parameter_name] is not None:
@@ -3716,18 +3965,23 @@ class GlobalParameterState(object):
 
         """
         if parameters_name_suffix is None:
-            suffix = ''
+            suffix = ""
         else:
-            suffix = '_' + parameters_name_suffix
+            suffix = "_" + parameters_name_suffix
         # TODO just use inspect.getmembers when dropping Python 2 which automatically resolves the MRO.
         # controlled_parameters = {name + suffix: descriptor for name, descriptor in inspect.getmembers(cls)
         #                          if isinstance(descriptor, cls.GlobalParameter)}
-        controlled_parameters = {name + suffix: descriptor for c in inspect.getmro(cls)
-                                 for name, descriptor in c.__dict__.items()
-                                 if isinstance(descriptor, cls.GlobalParameter)}
+        controlled_parameters = {
+            name + suffix: descriptor
+            for c in inspect.getmro(cls)
+            for name, descriptor in c.__dict__.items()
+            if isinstance(descriptor, cls.GlobalParameter)
+        }
         return controlled_parameters
 
-    def _validate_global_parameter(self, parameter_name, parameter_value, descriptor=None):
+    def _validate_global_parameter(
+        self, parameter_name, parameter_value, descriptor=None
+    ):
         """Return the validated parameter value using the descriptor validator.
 
         Parameters
@@ -3754,14 +4008,20 @@ class GlobalParameterState(object):
         """
         if descriptor is None:
             # Get the descriptors of all controlled parameters.
-            controlled_parameters = self._get_controlled_parameters(self._parameters_name_suffix)
+            controlled_parameters = self._get_controlled_parameters(
+                self._parameters_name_suffix
+            )
             # Call validator, before setting the parameter. This raises KeyError.
             descriptor = controlled_parameters[parameter_name]
         if descriptor.validator_func is not None:
-            parameter_value = descriptor.validator_func(descriptor, self, parameter_value)
+            parameter_value = descriptor.validator_func(
+                descriptor, self, parameter_value
+            )
         return parameter_value
 
-    def _get_global_parameter_value(self, parameter_name, descriptor=None, resolve_function=True):
+    def _get_global_parameter_value(
+        self, parameter_name, descriptor=None, resolve_function=True
+    ):
         """Retrieve the current value of a global parameter.
 
         Parameters
@@ -3794,7 +4054,9 @@ class GlobalParameterState(object):
             # If the value is generated through a mathematical expression,
             # we validate the value after the expression is evaluated rather
             # than on setting.
-            parameter_value = self._validate_global_parameter(parameter_name, parameter_value, descriptor)
+            parameter_value = self._validate_global_parameter(
+                parameter_name, parameter_value, descriptor
+            )
         return parameter_value
 
     def _set_global_parameter_value(self, parameter_name, new_value, descriptor=None):
@@ -3825,7 +4087,9 @@ class GlobalParameterState(object):
         # we validate the value after the expression is evaluated rather
         # than on setting.
         if not isinstance(new_value, GlobalParameterFunction):
-            new_value = self._validate_global_parameter(parameter_name, new_value, descriptor)
+            new_value = self._validate_global_parameter(
+                parameter_name, new_value, descriptor
+            )
         self._parameters[parameter_name] = new_value
 
     def __getattr__(self, key):
@@ -3843,7 +4107,10 @@ class GlobalParameterState(object):
         """Handles global parameters with a suffix."""
         # Check if the object has been initialized and we can
         # start resolving dynamically suffixed parameters.
-        if '_parameters_name_suffix' in self.__dict__ and self._parameters_name_suffix is not None:
+        if (
+            "_parameters_name_suffix" in self.__dict__
+            and self._parameters_name_suffix is not None
+        ):
             try:
                 self._set_global_parameter_value(key, value)
             except KeyError:
@@ -3882,29 +4149,29 @@ class GlobalParameterState(object):
         serialization = dict(
             parameters={},
             function_variables=self._function_variables.copy(),
-            parameters_name_suffix=self._parameters_name_suffix
+            parameters_name_suffix=self._parameters_name_suffix,
         )
         # Copy parameters. We serialize the parameters with their original name
         # (i.e., without suffix) because we'll pass them to _initialize().
         if self._parameters_name_suffix is None:
-            suffix = ''
+            suffix = ""
         else:
-            suffix = '_' + self._parameters_name_suffix
+            suffix = "_" + self._parameters_name_suffix
         for parameter_name in self._get_controlled_parameters():
             parameter_value = self._parameters[parameter_name + suffix]
             # Convert global parameter function into string expressions.
             if isinstance(parameter_value, GlobalParameterFunction):
                 parameter_value = parameter_value._expression
-            serialization['parameters'][parameter_name] = parameter_value
+            serialization["parameters"][parameter_name] = parameter_value
         return serialization
 
     def __setstate__(self, serialization):
         """Set the state from a dictionary representation."""
-        parameters = serialization['parameters']
+        parameters = serialization["parameters"]
         # parameters_name_suffix is optional for backwards compatibility since openmmtools 0.16.0.
-        parameters_name_suffix = serialization.get('parameters_name_suffix', None)
+        parameters_name_suffix = serialization.get("parameters_name_suffix", None)
         # Global parameter functions has been added in openmmtools 0.17.0.
-        function_variables = serialization.get('function_variables', {})
+        function_variables = serialization.get("function_variables", {})
 
         # Temporarily store global parameter functions.
         global_parameter_functions = {}
@@ -3920,11 +4187,15 @@ class GlobalParameterState(object):
 
         # Add global parameter functions.
         if parameters_name_suffix is not None:
-            parameters_name_suffix = '_' + parameters_name_suffix
+            parameters_name_suffix = "_" + parameters_name_suffix
         else:
-            parameters_name_suffix = ''
+            parameters_name_suffix = ""
         for parameter_name, expression in global_parameter_functions.items():
-            setattr(self, parameter_name + parameters_name_suffix, GlobalParameterFunction(expression))
+            setattr(
+                self,
+                parameter_name + parameters_name_suffix,
+                GlobalParameterFunction(expression),
+            )
 
     # -------------------------------------------------------------------------
     # Internal usage: Initialization
@@ -3949,8 +4220,13 @@ class GlobalParameterState(object):
 
         # Append suffix to parameters before storing them internally.
         if parameters_name_suffix is not None:
-            kwargs = {key + '_' + parameters_name_suffix: value for key, value in kwargs.items()}
-            controlled_parameters = {key + '_' + parameters_name_suffix for key in controlled_parameters}
+            kwargs = {
+                key + "_" + parameters_name_suffix: value
+                for key, value in kwargs.items()
+            }
+            controlled_parameters = {
+                key + "_" + parameters_name_suffix for key in controlled_parameters
+            }
 
         # Default value for all parameters is None.
         self._parameters = dict.fromkeys(controlled_parameters, None)
@@ -3964,7 +4240,8 @@ class GlobalParameterState(object):
             setattr(self, parameter_name, value)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import doctest
+
     doctest.testmod()
     # doctest.run_docstring_examples(CompoundThermodynamicState, globals())

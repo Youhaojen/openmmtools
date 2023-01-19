@@ -31,6 +31,7 @@ from openmmtools import integrators
 # GENERAL LRU CACHE
 # =============================================================================
 
+
 class LRUCache(object):
     """A simple LRU cache with a dictionary-like interface that supports maximum capacity and expiration.
 
@@ -211,6 +212,7 @@ class LRUCache(object):
 # GENERAL CONTEXT CACHE
 # =============================================================================
 
+
 class ContextCache(object):
     """LRU cache hosting the minimum amount of incompatible Contexts.
 
@@ -332,7 +334,7 @@ class ContextCache(object):
     @platform.setter
     def platform(self, new_platform):
         if len(self._lru) > 0:
-            raise RuntimeError('Cannot change platform of a non-empty ContextCache')
+            raise RuntimeError("Cannot change platform of a non-empty ContextCache")
         if new_platform is None:
             self._platform_properties = None
         self._validate_platform_properties(new_platform, self._platform_properties)
@@ -340,7 +342,7 @@ class ContextCache(object):
 
     def set_platform(self, new_platform, platform_properties=None):
         if len(self._lru) > 0:
-            raise RuntimeError('Cannot change platform of a non-empty ContextCache')
+            raise RuntimeError("Cannot change platform of a non-empty ContextCache")
         self._validate_platform_properties(new_platform, platform_properties)
         self._platform = new_platform
         self._platform_properties = platform_properties
@@ -423,11 +425,16 @@ class ContextCache(object):
         # If the user requires a specific integrator, look for one that matches.
         if integrator is None:
             thermodynamic_state_id = self._generate_state_id(thermodynamic_state)
-            matching_context_ids = [context_id for context_id in self._lru
-                                    if context_id[0] == thermodynamic_state_id]
+            matching_context_ids = [
+                context_id
+                for context_id in self._lru
+                if context_id[0] == thermodynamic_state_id
+            ]
             if len(matching_context_ids) == 0:
                 # We have to create a new Context.
-                integrator = self._get_default_integrator(thermodynamic_state.temperature)
+                integrator = self._get_default_integrator(
+                    thermodynamic_state.temperature
+                )
             elif len(matching_context_ids) == 1:
                 # Only one match.
                 context = self._lru[matching_context_ids[0]]
@@ -448,7 +455,9 @@ class ContextCache(object):
             try:
                 context = self._lru[context_id]
             except KeyError:
-                context = thermodynamic_state.create_context(integrator, self._platform, self._platform_properties)
+                context = thermodynamic_state.create_context(
+                    integrator, self._platform, self._platform_properties
+                )
             self._lru[context_id] = context
         context_integrator = context.getIntegrator()
 
@@ -466,29 +475,40 @@ class ContextCache(object):
             platform_serialization = self.platform.getName()
         else:
             platform_serialization = None
-        return dict(platform=platform_serialization, capacity=self.capacity,
-                    time_to_live=self.time_to_live, platform_properties=self._platform_properties)
+        return dict(
+            platform=platform_serialization,
+            capacity=self.capacity,
+            time_to_live=self.time_to_live,
+            platform_properties=self._platform_properties,
+        )
 
     def __setstate__(self, serialization):
         # this serialization format was introduced in openmmtools > 0.18.3 (pull request #437)
-        if serialization['platform'] is None:
+        if serialization["platform"] is None:
             self._platform = None
         else:
-            self._platform = openmm.Platform.getPlatformByName(serialization['platform'])
-        if not 'platform_properties' in serialization:
+            self._platform = openmm.Platform.getPlatformByName(
+                serialization["platform"]
+            )
+        if not "platform_properties" in serialization:
             self._platform_properties = None
         else:
             self._platform_properties = serialization["platform_properties"]
-        self._lru = LRUCache(serialization['capacity'], serialization['time_to_live'])
+        self._lru = LRUCache(serialization["capacity"], serialization["time_to_live"])
 
     def __eq__(self, other):
         """Two ContextCache objects are equal if they have the same values in their public attributes."""
         # Check types are compatible
         if isinstance(other, ContextCache):
             # Check all inner public attributes have the same values (excluding methods)
-            my_inner_attrs = [attr_ for attr_ in dir(self) if not attr_.startswith('_')
-                              and not callable(getattr(self, attr_))]
-            return all([getattr(self, attr) == getattr(other, attr) for attr in my_inner_attrs])
+            my_inner_attrs = [
+                attr_
+                for attr_ in dir(self)
+                if not attr_.startswith("_") and not callable(getattr(self, attr_))
+            ]
+            return all(
+                [getattr(self, attr) == getattr(other, attr) for attr in my_inner_attrs]
+            )
         else:
             return False
 
@@ -499,25 +519,29 @@ class ContextCache(object):
     # Each element is the name of the integrator attribute used before
     # get/set, and its standard value used to check for compatibility.
     COMPATIBLE_INTEGRATOR_ATTRIBUTES = {
-        'StepSize': 0.001,
-        'ConstraintTolerance': 1e-05,
-        'Temperature': 273,
-        'Friction': 5,
-        'RandomNumberSeed': 0,
+        "StepSize": 0.001,
+        "ConstraintTolerance": 1e-05,
+        "Temperature": 273,
+        "Friction": 5,
+        "RandomNumberSeed": 0,
     }
 
     INCOMPATIBLE_INTEGRATOR_ATTRIBUTES = {
-        '_restorable__class_hash',
+        "_restorable__class_hash",
     }
 
     @classmethod
     def _check_integrator_compatibility_configuration(cls):
         """Verify that the user didn't specify the same attributes as both compatible and incompatible."""
         shared_attributes = set(cls.COMPATIBLE_INTEGRATOR_ATTRIBUTES)
-        shared_attributes = shared_attributes.intersection(cls.INCOMPATIBLE_INTEGRATOR_ATTRIBUTES)
+        shared_attributes = shared_attributes.intersection(
+            cls.INCOMPATIBLE_INTEGRATOR_ATTRIBUTES
+        )
         if len(shared_attributes) != 0:
-            raise RuntimeError('These integrator attributes have been specified both as '
-                               'compatible and incompatible: {}'.format(shared_attributes))
+            raise RuntimeError(
+                "These integrator attributes have been specified both as "
+                "compatible and incompatible: {}".format(shared_attributes)
+            )
 
     @classmethod
     def _set_integrator_compatible_variables(cls, integrator, reference_value):
@@ -550,7 +574,6 @@ class ContextCache(object):
                 value = reference_value
             integrator.setGlobalVariable(global_variable_idx, value)
 
-
     @classmethod
     def _copy_integrator_state(cls, copied_integrator, integrator):
         """Copy the compatible parameters of copied_integrator to integrator.
@@ -576,11 +599,11 @@ class ContextCache(object):
         # Copy other compatible attributes through getters/setters.
         for attribute in cls.COMPATIBLE_INTEGRATOR_ATTRIBUTES:
             try:  # getter/setter
-                value = getattr(copied_integrator, 'get' + attribute)()
+                value = getattr(copied_integrator, "get" + attribute)()
             except AttributeError:
                 pass
             else:  # getter/setter
-                getattr(integrator, 'set' + attribute)(value)
+                getattr(integrator, "set" + attribute)(value)
 
     @classmethod
     def _standardize_integrator(cls, integrator):
@@ -603,7 +626,7 @@ class ContextCache(object):
         # eventual global variables with a different standard value.
         for attribute, std_value in cls.COMPATIBLE_INTEGRATOR_ATTRIBUTES.items():
             try:  # setter
-                getattr(standard_integrator, 'set' + attribute)(std_value)
+                getattr(standard_integrator, "set" + attribute)(std_value)
             except AttributeError:
                 # Try to set CustomIntegrator global variable
                 try:
@@ -626,14 +649,17 @@ class ContextCache(object):
         xml_serialization = openmm.XmlSerializer.serialize(standard_integrator)
         # Ignore per-DOF variables for the purpose of hashing.
         if isinstance(integrator, openmm.CustomIntegrator):
-            tag_iter = re.finditer(r'PerDofVariables>', xml_serialization)
+            tag_iter = re.finditer(r"PerDofVariables>", xml_serialization)
             try:
                 open_tag_index = next(tag_iter).start() - 1
             except StopIteration:  # No DOF variables.
                 pass
             else:
                 close_tag_index = next(tag_iter).end() + 1
-                xml_serialization = xml_serialization[:open_tag_index] + xml_serialization[close_tag_index:]
+                xml_serialization = (
+                    xml_serialization[:open_tag_index]
+                    + xml_serialization[close_tag_index:]
+                )
         return xml_serialization.__hash__()
 
     @classmethod
@@ -660,10 +686,11 @@ class ContextCache(object):
     def _default_integrator_id(cls):
         """Return the unique key of the default integrator."""
         if cls._cached_default_integrator_id is None:
-            default_integrator = cls._get_default_integrator(300*unit.kelvin)
+            default_integrator = cls._get_default_integrator(300 * unit.kelvin)
             default_integrator_id = cls._generate_integrator_id(default_integrator)
             cls._cached_default_integrator_id = default_integrator_id
         return cls._cached_default_integrator_id
+
     _cached_default_integrator_id = None
 
     @staticmethod
@@ -672,7 +699,9 @@ class ContextCache(object):
         if platform_properties is None:
             return True
         if platform_properties is not None and platform is None:
-            raise ValueError("To set platform_properties, you need to also specify the platform.")
+            raise ValueError(
+                "To set platform_properties, you need to also specify the platform."
+            )
         if not isinstance(platform_properties, dict):
             raise ValueError("platform_properties must be a dictionary")
         for key, value in platform_properties.items():
@@ -685,13 +714,17 @@ class ContextCache(object):
         # create a context to check if all properties are
         dummy_system = openmm.System()
         dummy_system.addParticle(1)
-        dummy_integrator = openmm.VerletIntegrator(1.0*unit.femtoseconds)
+        dummy_integrator = openmm.VerletIntegrator(1.0 * unit.femtoseconds)
         try:
-            openmm.Context(dummy_system, dummy_integrator, platform, platform_properties)
+            openmm.Context(
+                dummy_system, dummy_integrator, platform, platform_properties
+            )
             return True
         except Exception as e:
             if "Illegal property name" in str(e):
-                raise ValueError("Invalid platform property for this platform. {}".format(e))
+                raise ValueError(
+                    "Invalid platform property for this platform. {}".format(e)
+                )
             else:
                 raise e
 
@@ -699,6 +732,7 @@ class ContextCache(object):
 # =============================================================================
 # DUMMY CONTEXT CACHE
 # =============================================================================
+
 
 class DummyContextCache(object):
     """A dummy ContextCache which always create a new Context.
@@ -735,6 +769,7 @@ class DummyContextCache(object):
     >>> context, context_integrator = context_cache.get_context(thermo_state)
 
     """
+
     def __init__(self, platform=None):
         self.platform = platform
 
@@ -763,9 +798,9 @@ class DummyContextCache(object):
         """
         if integrator is None:
             integrator = integrators.LangevinIntegrator(
-                timestep=1.0*unit.femtoseconds,
+                timestep=1.0 * unit.femtoseconds,
                 splitting="V R O R V",
-                temperature=thermodynamic_state.temperature
+                temperature=thermodynamic_state.temperature,
             )
         context = thermodynamic_state.create_context(integrator, self.platform)
         return context, integrator
@@ -778,10 +813,10 @@ class DummyContextCache(object):
         return dict(platform=platform_serialization)
 
     def __setstate__(self, serialization):
-        if serialization['platform'] is None:
+        if serialization["platform"] is None:
             self.platform = None
         else:
-            self.platform = openmm.Platform.getPlatformByName(serialization['platform'])
+            self.platform = openmm.Platform.getPlatformByName(serialization["platform"])
 
 
 # =============================================================================
@@ -795,8 +830,10 @@ global_context_cache = ContextCache(capacity=None, time_to_live=None)
 # CACHE ENTRY (MODULE INTERNAL USAGE)
 # =============================================================================
 
+
 class _CacheEntry(object):
     """A cache entry holding an optional expiration attribute."""
+
     def __init__(self, value, expiration=None):
         self.value = value
 
@@ -806,6 +843,7 @@ class _CacheEntry(object):
             self.expiration = expiration
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

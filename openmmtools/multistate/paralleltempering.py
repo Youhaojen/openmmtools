@@ -32,7 +32,11 @@ import logging
 import numpy as np
 
 from openmmtools import states, cache, constants
-from openmmtools.multistate import ReplicaExchangeSampler, ReplicaExchangeAnalyzer, MultiStateReporter
+from openmmtools.multistate import (
+    ReplicaExchangeSampler,
+    ReplicaExchangeAnalyzer,
+    MultiStateReporter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,7 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # PARALLEL TEMPERING
 # ==============================================================================
+
 
 class ParallelTemperingSampler(ReplicaExchangeSampler):
     """Parallel tempering simulation facility.
@@ -103,12 +108,22 @@ class ParallelTemperingSampler(ReplicaExchangeSampler):
 
     """
 
-    _TITLE_TEMPLATE = ('Parallel tempering simulation created using ParallelTempering '
-                       'class of yank.multistate on {}')
+    _TITLE_TEMPLATE = (
+        "Parallel tempering simulation created using ParallelTempering "
+        "class of yank.multistate on {}"
+    )
 
-    def create(self, thermodynamic_state, sampler_states: list, storage,
-               min_temperature=None, max_temperature=None, n_temperatures=None,
-               temperatures=None, **kwargs):
+    def create(
+        self,
+        thermodynamic_state,
+        sampler_states: list,
+        storage,
+        min_temperature=None,
+        max_temperature=None,
+        n_temperatures=None,
+        temperatures=None,
+        **kwargs
+    ):
         """Initialize a parallel tempering simulation object.
 
         Parameters
@@ -148,29 +163,48 @@ class ParallelTemperingSampler(ReplicaExchangeSampler):
         """
         # Create thermodynamic states from temperatures.
         if not isinstance(thermodynamic_state, states.ThermodynamicState):
-            raise ValueError("ParallelTempering only accepts a single ThermodynamicState!\n"
-                             "If you have already set temperatures in your list of states, please use the "
-                             "standard ReplicaExchange class with your list of states.")
+            raise ValueError(
+                "ParallelTempering only accepts a single ThermodynamicState!\n"
+                "If you have already set temperatures in your list of states, please use the "
+                "standard ReplicaExchange class with your list of states."
+            )
         if temperatures is not None:
             logger.debug("Using provided temperatures")
-        elif min_temperature is not None and max_temperature is not None and n_temperatures is not None:
+        elif (
+            min_temperature is not None
+            and max_temperature is not None
+            and n_temperatures is not None
+        ):
             try:
                 from openmm import unit
-            except ImportError: # OpenMM < 7.6
+            except ImportError:  # OpenMM < 7.6
                 from simtk import unit
             temperature_unit = unit.kelvin
-            temperatures = np.logspace(np.log10(min_temperature/temperature_unit), np.log10(max_temperature/temperature_unit), num=n_temperatures) * temperature_unit
-            logger.debug('using temperatures {}'.format(temperatures))
+            temperatures = (
+                np.logspace(
+                    np.log10(min_temperature / temperature_unit),
+                    np.log10(max_temperature / temperature_unit),
+                    num=n_temperatures,
+                )
+                * temperature_unit
+            )
+            logger.debug("using temperatures {}".format(temperatures))
         else:
-            raise ValueError("Either 'temperatures' or ('min_temperature', 'max_temperature', "
-                             "and 'n_temperatures') must be provided.")
+            raise ValueError(
+                "Either 'temperatures' or ('min_temperature', 'max_temperature', "
+                "and 'n_temperatures') must be provided."
+            )
 
-        thermodynamic_states = [copy.deepcopy(thermodynamic_state) for _ in range(n_temperatures)]
+        thermodynamic_states = [
+            copy.deepcopy(thermodynamic_state) for _ in range(n_temperatures)
+        ]
         for state, temperature in zip(thermodynamic_states, temperatures):
             state.temperature = temperature
 
         # Initialize replica-exchange simulation.
-        super(ParallelTemperingSampler, self).create(thermodynamic_states, sampler_states, storage=storage, **kwargs)
+        super(ParallelTemperingSampler, self).create(
+            thermodynamic_states, sampler_states, storage=storage, **kwargs
+        )
 
     def _compute_replica_energies(self, replica_id):
         """Compute the energy for the replica at every temperature.
@@ -187,8 +221,12 @@ class ParallelTemperingSampler(ReplicaExchangeSampler):
         state_index = self._replica_thermodynamic_states[replica_id]
         neighborhood = self._neighborhood(state_index)
         # Only compute energies over neighborhoods
-        energy_neighborhood_states = energy_thermodynamic_states[neighborhood]  # Array, can be indexed like this
-        neighborhood_thermodynamic_states = [self._thermodynamic_states[n] for n in neighborhood]  # List
+        energy_neighborhood_states = energy_thermodynamic_states[
+            neighborhood
+        ]  # Array, can be indexed like this
+        neighborhood_thermodynamic_states = [
+            self._thermodynamic_states[n] for n in neighborhood
+        ]  # List
 
         # Retrieve sampler states associated to this replica.
         sampler_state = self._sampler_states[replica_id]
@@ -197,22 +235,32 @@ class ParallelTemperingSampler(ReplicaExchangeSampler):
         reference_thermodynamic_state = self._thermodynamic_states[0]
 
         # Get the context, any Integrator works.
-        context, integrator = self.energy_context_cache.get_context(reference_thermodynamic_state)
+        context, integrator = self.energy_context_cache.get_context(
+            reference_thermodynamic_state
+        )
 
         # Update positions and box vectors.
         sampler_state.apply_to_context(context)
 
         # Compute energy.
-        reference_reduced_potential = reference_thermodynamic_state.reduced_potential(context)
+        reference_reduced_potential = reference_thermodynamic_state.reduced_potential(
+            context
+        )
 
         # Strip reference potential of reference state's beta.
-        reference_beta = 1.0 / (constants.kB * reference_thermodynamic_state.temperature)
+        reference_beta = 1.0 / (
+            constants.kB * reference_thermodynamic_state.temperature
+        )
         reference_reduced_potential /= reference_beta
 
         # Update potential energy by temperature.
-        for thermodynamic_state_id, thermodynamic_state in enumerate(neighborhood_thermodynamic_states):
+        for thermodynamic_state_id, thermodynamic_state in enumerate(
+            neighborhood_thermodynamic_states
+        ):
             beta = 1.0 / (constants.kB * thermodynamic_state.temperature)
-            energy_neighborhood_states[thermodynamic_state_id] = beta * reference_reduced_potential
+            energy_neighborhood_states[thermodynamic_state_id] = (
+                beta * reference_reduced_potential
+            )
 
         # Since no assumptions can be made about the unsampled thermodynamic states, do it the hard way
         for unsampled_id, state in enumerate(self._unsampled_states):
@@ -249,7 +297,9 @@ class ParallelTemperingAnalyzer(ReplicaExchangeAnalyzer):
     ReplicaExchangeAnalyzer
 
     """
+
     pass
+
 
 # ==============================================================================
 # MAIN AND TESTS
@@ -257,4 +307,5 @@ class ParallelTemperingAnalyzer(ReplicaExchangeAnalyzer):
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

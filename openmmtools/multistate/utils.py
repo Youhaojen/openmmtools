@@ -33,13 +33,13 @@ from pymbar import timeseries  # for statistical inefficiency analysis
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    'generate_phase_name',
-    'get_decorrelation_time',
-    'get_equilibration_data',
-    'get_equilibration_data_per_sample',
-    'remove_unequilibrated_data',
-    'subsample_data_along_axis',
-    'SimulationNaNError'
+    "generate_phase_name",
+    "get_decorrelation_time",
+    "get_equilibration_data",
+    "get_equilibration_data_per_sample",
+    "remove_unequilibrated_data",
+    "subsample_data_along_axis",
+    "SimulationNaNError",
 ]
 
 
@@ -47,14 +47,17 @@ __all__ = [
 # Sampling Exceptions
 # =============================================================================================
 
+
 class SimulationNaNError(Exception):
     """Error when a simulation goes to NaN"""
+
     pass
 
 
 # =============================================================================================
 # MODULE FUNCTIONS
 # =============================================================================================
+
 
 def generate_phase_name(current_name, name_list):
     """
@@ -77,7 +80,7 @@ def generate_phase_name(current_name, name_list):
         Unique string derived from the current_name that is not in name_list.
         If the parameter current_name is not already in the name_list, then current_name is returned unmodified.
     """
-    base_name = 'phase{}'
+    base_name = "phase{}"
     counter = 0
     if current_name is None:
         name = base_name.format(counter)
@@ -113,7 +116,7 @@ def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subs
     This is different than saying "I want analysis done every X for total points Y = len(timeseries)/X",
     this is "I want Y total analysis points"
 
-    Note that the returned arrays will be of size max_subset - 1, because we always discard data from the first time 
+    Note that the returned arrays will be of size max_subset - 1, because we always discard data from the first time
     origin due to equilibration.
 
     See the ``pymbar.timeseries.detectEquilibration`` function for full algorithm documentation
@@ -124,8 +127,8 @@ def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subs
         1-D timeseries to analyze for equilibration
     max_subset : int >= 1 or None, optional, default: 100
         Maximum number of points in the ``timeseries_to_analyze`` on which to analyze the equilibration on.
-        These are distributed uniformly over the timeseries so the final output (after discarding the first point 
-        due to equilibration) will be size max_subset - 1 where indices are placed  approximately every 
+        These are distributed uniformly over the timeseries so the final output (after discarding the first point
+        due to equilibration) will be size max_subset - 1 where indices are placed  approximately every
         ``(len(timeseries_to_analyze) - 1) / max_subset``.
         The full timeseries is used if the timeseries is smaller than ``max_subset`` or if ``max_subset`` is None
     fast : bool, optional. Default: True
@@ -167,10 +170,11 @@ def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subs
         max_subset = 1
     # Special trap for constant or size 1 series
     if series.std() == 0.0 or max_subset == 1:
-        return (np.arange(max_subset, dtype=int),  # i_t
-                np.array([1]*max_subset),  # g_i
-                np.arange(time_size, time_size-max_subset, -1)  # n_effective_i
-                )
+        return (
+            np.arange(max_subset, dtype=int),  # i_t
+            np.array([1] * max_subset),  # g_i
+            np.arange(time_size, time_size - max_subset, -1),  # n_effective_i
+        )
     g_i = np.ones([max_subset], np.float32)
     n_effective_i = np.ones([max_subset], np.float32)
     counter = np.arange(max_subset)
@@ -179,10 +183,10 @@ def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subs
         try:
             g_i[i] = timeseries.statisticalInefficiency(series[t:], fast=fast)
         except:
-            g_i[i] = (time_size - t + 1)
+            g_i[i] = time_size - t + 1
         n_effective_i[i] = (time_size - t + 1) / g_i[i]
 
-    # We should never choose data from the first time origin as the equilibrated data because 
+    # We should never choose data from the first time origin as the equilibrated data because
     # it contains snapshots warming up from minimization, which causes problems with correlation time detection
     # By default (max_subset=100), the first 1% of the data is discarded. If 1% is not ideal, user can specify
     # max_subset to change the percentage (e.g. if 0.5% is desired, specify max_subset=200).
@@ -222,9 +226,13 @@ def get_equilibration_data(timeseries_to_analyze, fast=True, max_subset=1000):
     --------
     get_equilibration_data_per_sample
     """
-    warnings.warn("This function will be removed in future versions of YANK due to redundancy, "
-                  "Please use the more general `get_equilibration_data_per_sample` function instead.")
-    i_t, g_i, n_effective_i = get_equilibration_data_per_sample(timeseries_to_analyze, fast=fast, max_subset=max_subset)
+    warnings.warn(
+        "This function will be removed in future versions of YANK due to redundancy, "
+        "Please use the more general `get_equilibration_data_per_sample` function instead."
+    )
+    i_t, g_i, n_effective_i = get_equilibration_data_per_sample(
+        timeseries_to_analyze, fast=fast, max_subset=max_subset
+    )
     n_effective_max = n_effective_i.max()
     i_max = n_effective_i.argmax()
     n_equilibration = i_t[i_max]
@@ -287,27 +295,40 @@ def subsample_data_along_axis(data, subsample_rate, axis):
     cast_data = np.asarray(data)
     data_shape = cast_data.shape
     # Since we already have g, we can just pass any appropriate shape to the subsample function
-    indices = timeseries.subsampleCorrelatedData(np.zeros(data_shape[axis]), g=subsample_rate)
+    indices = timeseries.subsampleCorrelatedData(
+        np.zeros(data_shape[axis]), g=subsample_rate
+    )
     subsampled_data = np.take(cast_data, indices, axis=axis)
     return subsampled_data
+
 
 # =============================================================================================
 # SPECIAL MIXINS
 # =============================================================================================
 
+
 class NNPCompatibilityMixin(object):
     """
     Mixin for subclasses of `MultistateSampler` that supports `openmm-ml` exchanges of `lambda_interpolate`
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    
-    def setup(self, n_states, mixed_system, 
-              init_positions, temperature, storage_kwargs, 
-              n_replicas=None, lambda_schedule=None, 
-              lambda_protocol=None, setup_equilibration_intervals=None,
-              steps_per_setup_equilibration_interval=None,
-              **unused_kwargs):
+
+    def setup(
+        self,
+        n_states,
+        mixed_system,
+        init_positions,
+        temperature,
+        storage_kwargs,
+        n_replicas=None,
+        lambda_schedule=None,
+        lambda_protocol=None,
+        setup_equilibration_intervals=None,
+        steps_per_setup_equilibration_interval=None,
+        **unused_kwargs,
+    ):
         """try to gently equilibrate the setup of the different thermodynamic states;
         make the number of `setup_equilibration_intervals` some multiple of `n_states`.
         The number of initial equilibration steps will be equal to
@@ -315,97 +336,141 @@ class NNPCompatibilityMixin(object):
         """
         import openmm
         from openmm import unit
-        from openmmtools.states import ThermodynamicState, SamplerState, CompoundThermodynamicState
+        from openmmtools.states import (
+            ThermodynamicState,
+            SamplerState,
+            CompoundThermodynamicState,
+        )
         from openmmtools.alchemy import NNPAlchemicalState
         from copy import deepcopy
         from openmmtools.multistate import MultiStateReporter
         from openmmtools.utils import get_fastest_platform
         from openmmtools import cache
-        platform = get_fastest_platform(minimum_precision='mixed')
-        context_cache = cache.ContextCache(capacity=None, time_to_live=None, platform=platform)
+
+        platform = get_fastest_platform(minimum_precision="mixed")
+        context_cache = cache.ContextCache(
+            capacity=None, time_to_live=None, platform=platform
+        )
 
         lambda_zero_alchemical_state = NNPAlchemicalState.from_system(mixed_system)
-        thermostate = ThermodynamicState(mixed_system,
-            temperature=temperature)
-        compound_thermostate = CompoundThermodynamicState(thermostate,
-            composable_states=[lambda_zero_alchemical_state])
+        thermostate = ThermodynamicState(mixed_system, temperature=temperature)
+        compound_thermostate = CompoundThermodynamicState(
+            thermostate, composable_states=[lambda_zero_alchemical_state]
+        )
         thermostate_list, sampler_state_list, unsampled_thermostate_list = [], [], []
         if n_replicas is None:
             n_replicas = n_states
         else:
-            raise NotImplementedError(f"""the number of states was given as {n_states} 
+            raise NotImplementedError(
+                f"""the number of states was given as {n_states} 
                                         but the number of replicas was given as {n_replicas}. 
-                                        We currently only support equal states and replicas""")
+                                        We currently only support equal states and replicas"""
+            )
         if lambda_schedule is None:
-            lambda_schedule = np.linspace(0., 1., n_states)
+            lambda_schedule = np.linspace(0.0, 1.0, n_states)
         else:
             assert len(lambda_schedule) == n_states
-            assert np.isclose(lambda_schedule[0], 0.)
-            assert np.isclose(lambda_schedule[-1], 1.)
+            assert np.isclose(lambda_schedule[0], 0.0)
+            assert np.isclose(lambda_schedule[-1], 1.0)
 
         if setup_equilibration_intervals is not None:
             # attempt to gently equilibrate
-            assert setup_equilibration_intervals % n_states == 0, f"""
+            assert (
+                setup_equilibration_intervals % n_states == 0
+            ), f"""
               the number of `n_states` must be divisible into `setup_equilibration_intervals`"""
             interval_stepper = setup_equilibration_intervals // n_states
 
         else:
-            raise Exception(f"At present, we require setup equilibration interval work.")
-        
+            raise Exception(
+                f"At present, we require setup equilibration interval work."
+            )
+
         if lambda_protocol is None:
             from openmmtools.alchemy import NNPProtocol
+
             lambda_protocol = NNPProtocol()
         else:
-            raise NotImplementedError(f"""`lambda_protocol` is currently placeholding; only default `None` 
-                                      is allowed until the `lambda_protocol` class is appropriately generalized""")
-        
-        init_sampler_state = SamplerState(init_positions, box_vectors = mixed_system.getDefaultPeriodicBoxVectors())
+            raise NotImplementedError(
+                f"""`lambda_protocol` is currently placeholding; only default `None` 
+                                      is allowed until the `lambda_protocol` class is appropriately generalized"""
+            )
+
+        init_sampler_state = SamplerState(
+            init_positions, box_vectors=mixed_system.getDefaultPeriodicBoxVectors()
+        )
 
         # first, a context, integrator to equilibrate and minimize state 0
-        eq_context, eq_integrator = context_cache.get_context(deepcopy(compound_thermostate),
-                                                              openmm.LangevinMiddleIntegrator(temperature, 1., 0.001))
-        init_sampler_state.apply_to_context(eq_context) # don't forget to set particle positions, bvs
-        openmm.LocalEnergyMinimizer.minimize(eq_context) # don't forget to minimize
-        init_sampler_state.update_from_context(eq_context) # update from context for good measure
-        eq_context.setVelocitiesToTemperature(temperature) # set velocities at appropriate temperature
+        eq_context, eq_integrator = context_cache.get_context(
+            deepcopy(compound_thermostate),
+            openmm.LangevinMiddleIntegrator(temperature, 1.0, 0.001),
+        )
+        init_sampler_state.apply_to_context(
+            eq_context
+        )  # don't forget to set particle positions, bvs
+        openmm.LocalEnergyMinimizer.minimize(eq_context)  # don't forget to minimize
+        init_sampler_state.update_from_context(
+            eq_context
+        )  # update from context for good measure
+        eq_context.setVelocitiesToTemperature(
+            temperature
+        )  # set velocities at appropriate temperature
 
         logger.info(f"making lambda states...")
-        lambda_subinterval_schedule = np.linspace(0., 1., setup_equilibration_intervals)
+        lambda_subinterval_schedule = np.linspace(
+            0.0, 1.0, setup_equilibration_intervals
+        )
         # now compute the indices of the subinterval schedule that will correspond to a state in the lambda schedule
-        subinterval_matching_idx = [idx * interval_stepper for idx in range(len(lambda_schedule))]
+        subinterval_matching_idx = [
+            idx * interval_stepper for idx in range(len(lambda_schedule + 1))
+        ]
+        subinterval_matching_idx = np.round(
+            np.linspace(0, lambda_subinterval_schedule.shape[0] - 1, n_states)
+        ).astype(int)
+
         print(subinterval_matching_idx)
         logger.info(f"running thermolist population...")
         # each replica sweeps over the linspace of lambda values, but does not stop when it gets to the correct equilibrated value - apparently each MPI rank needs all of the separately equilibrated replicas as its own copy... seems wasteful to me
         for idx, lambda_subinterval in enumerate(lambda_subinterval_schedule):
             logger.info(f"running lambda subinterval {lambda_subinterval}.")
-            compound_thermostate_copy = deepcopy(compound_thermostate) # copy thermostate
-            compound_thermostate_copy.set_alchemical_parameters(lambda_subinterval, lambda_protocol) # update thermostate
-            compound_thermostate_copy.apply_to_context(eq_context) # apply new alch val to context
-            eq_integrator.step(steps_per_setup_equilibration_interval) # step the integrator
-            init_sampler_state.update_from_context(eq_context) # update sampler_state
+            compound_thermostate_copy = deepcopy(
+                compound_thermostate
+            )  # copy thermostate
+            compound_thermostate_copy.set_alchemical_parameters(
+                lambda_subinterval, lambda_protocol
+            )  # update thermostate
+            compound_thermostate_copy.apply_to_context(
+                eq_context
+            )  # apply new alch val to context
+            eq_integrator.step(
+                steps_per_setup_equilibration_interval
+            )  # step the integrator
+            init_sampler_state.update_from_context(eq_context)  # update sampler_state
 
             # TODO: this does not reliably find the endstates
-            # alternative, if the endstate is the index * multiplier: 
+            # alternative, if the endstate is the index * multiplier:
             # matchers = any(i * interval_stepper == idx for i in lambda_schedule)
             # print(matchers)
-            
 
             # matchers = [np.isclose(lambda_subinterval, i, rtol=1e-3) for i in lambda_schedule]
-            # this is the pure ml state - why are we not sampling from this? are we somehow handling this differently? 
-            ml_endstate_matcher = np.isclose(lambda_subinterval, 1.) # this is the last state, and we want to make it unsampled
-            if ml_endstate_matcher:
-                unsampled_thermostate_list.append(compound_thermostate_copy)
+            # this is the pure ml state - why are we not sampling from this? are we somehow handling this differently?
+            # ml_endstate_matcher = np.isclose(lambda_subinterval, 1.) # this is the last state, and we want to make it unsampled
+            # if ml_endstate_matcher:
+            #     unsampled_thermostate_list.append(compound_thermostate_copy)
             # elif any(matchers): # if the lambda subinterval is in the lambda protocol, add thermostate and sampler state
-            elif idx in subinterval_matching_idx:
+            if idx in subinterval_matching_idx:
                 print("Adding state", lambda_subinterval, "matching index", idx)
                 thermostate_list.append(compound_thermostate_copy)
                 sampler_state_list.append(deepcopy(init_sampler_state))
 
-        # why is only a singular state making it into the sampler state list here? 
+        # why is only a singular state making it into the sampler state list here?
         logger.info(sampler_state_list)
         # put context, integrator into garbage collector
         del eq_context
         del eq_integrator
         reporter = MultiStateReporter(**storage_kwargs)
-        self.create(thermodynamic_states = thermostate_list, sampler_states = sampler_state_list, storage=reporter, 
-            unsampled_thermodynamic_states = unsampled_thermostate_list)
+        self.create(
+            thermodynamic_states=thermostate_list,
+            sampler_states=sampler_state_list,
+            storage=reporter,
+        )

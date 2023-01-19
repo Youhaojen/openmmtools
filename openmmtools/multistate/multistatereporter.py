@@ -59,6 +59,7 @@ logger = logging.getLogger(__name__)
 # MULTISTATE SAMPLER REPORTER
 # ==============================================================================
 
+
 class MultiStateReporter(object):
     """Handle storage write/read operations and different format conventions.
 
@@ -110,12 +111,20 @@ class MultiStateReporter(object):
     analysis_particle_indices
 
     """
-    def __init__(self, storage, open_mode=None,
-                 checkpoint_interval=50, checkpoint_storage=None,
-                 analysis_particle_indices=()):
+
+    def __init__(
+        self,
+        storage,
+        open_mode=None,
+        checkpoint_interval=50,
+        checkpoint_storage=None,
+        analysis_particle_indices=(),
+    ):
 
         # Warn that API is experimental
-        logger.warn('Warning: The openmmtools.multistate API is experimental and may change in future releases')
+        logger.warn(
+            "Warning: The openmmtools.multistate API is experimental and may change in future releases"
+        )
 
         # Handle checkpointing
         if type(checkpoint_interval) != int:
@@ -125,7 +134,11 @@ class MultiStateReporter(object):
             basename, ext = os.path.splitext(filename)
             addon = "_checkpoint"
             checkpoint_storage = os.path.join(dirname, basename + addon + ext)
-            logger.debug("Initial checkpoint file automatically chosen as {}".format(checkpoint_storage))
+            logger.debug(
+                "Initial checkpoint file automatically chosen as {}".format(
+                    checkpoint_storage
+                )
+            )
         else:
             checkpoint_storage = os.path.join(dirname, checkpoint_storage)
         self._storage_analysis_file_path = storage
@@ -168,25 +181,28 @@ class MultiStateReporter(object):
     @property
     def _storage_dict(self):
         """Return an iterable dictionary of the self._storage_X objects"""
-        return {'checkpoint': self._storage_checkpoint, 'analysis': self._storage_analysis}
+        return {
+            "checkpoint": self._storage_checkpoint,
+            "analysis": self._storage_analysis,
+        }
 
     @property
     def n_states(self):
         if not self.is_open():
             return None
-        return self._storage_analysis.dimensions['state'].size
+        return self._storage_analysis.dimensions["state"].size
 
     @property
     def n_replicas(self):
         if not self.is_open():
             return None
-        return self._storage_analysis.dimensions['replica'].size
+        return self._storage_analysis.dimensions["replica"].size
 
     @property
     def is_periodic(self):
         if not self.is_open():
             return None
-        if 'box_vectors' in self._storage_analysis.variables:
+        if "box_vectors" in self._storage_analysis.variables:
             return True
         return False
 
@@ -243,7 +259,7 @@ class MultiStateReporter(object):
                 open_check_list.append(storage.isopen())
         return np.all(open_check_list)
 
-    def open(self, mode='r', convention='ReplicaExchange', netcdf_format='NETCDF4'):
+    def open(self, mode="r", convention="ReplicaExchange", netcdf_format="NETCDF4"):
         """
         Open the storage file for reading/writing.
 
@@ -266,7 +282,7 @@ class MultiStateReporter(object):
         self.close()
 
         # Create directory if we want to write.
-        if mode != 'r':
+        if mode != "r":
             for storage_path in self._storage_paths:
                 # normpath() transform '' to '.' for makedirs().
                 storage_dir = os.path.normpath(os.path.dirname(storage_path))
@@ -276,10 +292,11 @@ class MultiStateReporter(object):
         # ---------------
 
         # Open analysis file.
-        self._storage_analysis = self._open_dataset_robustly(self._storage_analysis_file_path,
-                                                             mode, version=netcdf_format,
-                                                             )
-
+        self._storage_analysis = self._open_dataset_robustly(
+            self._storage_analysis_file_path,
+            mode,
+            version=netcdf_format,
+        )
 
         # The analysis netcdf file holds a reference UUID so that we can check
         # that the secondary netcdf files (currently only the checkpoint
@@ -294,18 +311,23 @@ class MultiStateReporter(object):
             self._storage_analysis.UUID = primary_uuid
 
         # Initialize dataset, if needed.
-        self._initialize_storage_file(self._storage_analysis, 'analysis', convention)
+        self._initialize_storage_file(self._storage_analysis, "analysis", convention)
 
         # Checkpoint file.
         # -----------------
 
         # Open checkpoint netcdf files.
-        msg = ('Could not locate checkpoint subfile. This is okay for analysis if the '
-               'solvent trajectory is not needed, but not for production simulation!')
-        self._storage_checkpoint = self._open_dataset_robustly(self._storage_checkpoint_file_path,
-                                                               mode, catch_io_error=True,
-                                                               io_error_warning=msg,
-                                                               version=netcdf_format)
+        msg = (
+            "Could not locate checkpoint subfile. This is okay for analysis if the "
+            "solvent trajectory is not needed, but not for production simulation!"
+        )
+        self._storage_checkpoint = self._open_dataset_robustly(
+            self._storage_checkpoint_file_path,
+            mode,
+            catch_io_error=True,
+            io_error_warning=msg,
+            version=netcdf_format,
+        )
         if self._storage_checkpoint is not None:
             # Check that the checkpoint file has the same UUID of the analysis file.
             try:
@@ -314,13 +336,18 @@ class MultiStateReporter(object):
                 # This is a new file. Assign UUID.
                 self._storage_checkpoint.UUID = primary_uuid
             except AssertionError:
-                raise IOError('Checkpoint UUID does not match analysis UUID! '
-                              'This checkpoint file came from another simulation!\n'
-                              'Analysis UUID: {}; Checkpoint UUID: {}'.format(
-                    primary_uuid, self._storage_checkpoint.UUID))
+                raise IOError(
+                    "Checkpoint UUID does not match analysis UUID! "
+                    "This checkpoint file came from another simulation!\n"
+                    "Analysis UUID: {}; Checkpoint UUID: {}".format(
+                        primary_uuid, self._storage_checkpoint.UUID
+                    )
+                )
 
             # Initialize dataset, if needed.
-            self._initialize_storage_file(self._storage_checkpoint, 'checkpoint', convention)
+            self._initialize_storage_file(
+                self._storage_checkpoint, "checkpoint", convention
+            )
 
         # Further checkpoint interval checks.
         # -----------------------------------
@@ -329,33 +356,56 @@ class MultiStateReporter(object):
             # The same number will be on checkpoint file as well, but its not guaranteed to be present
             on_file_interval = self._storage_analysis.CheckpointInterval
             if on_file_interval != self._checkpoint_interval:
-                logger.debug("checkpoint_interval != on-file checkpoint interval! "
-                             "Using on file analysis interval of {}.".format(on_file_interval))
+                logger.debug(
+                    "checkpoint_interval != on-file checkpoint interval! "
+                    "Using on file analysis interval of {}.".format(on_file_interval)
+                )
                 self._checkpoint_interval = on_file_interval
             # Check the special particle indices
             # Handle the "variable does not exist" case
-            if 'analysis_particle_indices' not in self._storage_analysis.variables:
+            if "analysis_particle_indices" not in self._storage_analysis.variables:
                 n_particles = len(self._analysis_particle_indices)
                 # This dimension won't exist if the above statement does not either
-                self._storage_analysis.createDimension('analysis_particles', n_particles)
-                ncvar_analysis_particles = \
-                    self._storage_analysis.createVariable('analysis_particle_indices', int, 'analysis_particles')
+                self._storage_analysis.createDimension(
+                    "analysis_particles", n_particles
+                )
+                ncvar_analysis_particles = self._storage_analysis.createVariable(
+                    "analysis_particle_indices", int, "analysis_particles"
+                )
                 ncvar_analysis_particles[:] = self._analysis_particle_indices
-                ncvar_analysis_particles.long_name = ("analysis_particle_indices[analysis_particles] is the indices of "
-                                                      "the particles with extra information stored about them in the"
-                                                      "analysis file.")
+                ncvar_analysis_particles.long_name = (
+                    "analysis_particle_indices[analysis_particles] is the indices of "
+                    "the particles with extra information stored about them in the"
+                    "analysis file."
+                )
 
             # Now handle the "variable does exist but does not match the provided ones"
             # Although redundant if it was just created, its an easy check to make
-            stored_analysis_particles = self._storage_analysis.variables['analysis_particle_indices'][:]
-            if self._analysis_particle_indices != tuple(stored_analysis_particles.astype(int)):
-                logger.debug("analysis_particle_indices != on-file analysis_particle_indices!"
-                             "Using on file analysis indices of {}".format(stored_analysis_particles))
-                self._analysis_particle_indices = tuple(stored_analysis_particles.astype(int))
+            stored_analysis_particles = self._storage_analysis.variables[
+                "analysis_particle_indices"
+            ][:]
+            if self._analysis_particle_indices != tuple(
+                stored_analysis_particles.astype(int)
+            ):
+                logger.debug(
+                    "analysis_particle_indices != on-file analysis_particle_indices!"
+                    "Using on file analysis indices of {}".format(
+                        stored_analysis_particles
+                    )
+                )
+                self._analysis_particle_indices = tuple(
+                    stored_analysis_particles.astype(int)
+                )
 
-    def _open_dataset_robustly(self, *args, n_attempts=5, sleep_time=2,
-                               catch_io_error=False, io_error_warning=None,
-                               **kwargs):
+    def _open_dataset_robustly(
+        self,
+        *args,
+        n_attempts=5,
+        sleep_time=2,
+        catch_io_error=False,
+        io_error_warning=None,
+        **kwargs,
+    ):
         """Attempt to open the dataset multiple times if it raises an error.
 
         This may be useful to solve some MPI concurrency and locking issues
@@ -366,12 +416,14 @@ class MultiStateReporter(object):
         """
 
         # Catch eventual errors n_attempts - 1 times.
-        for attempt in range(n_attempts-1):
+        for attempt in range(n_attempts - 1):
             try:
                 return netcdf.Dataset(*args, **kwargs)
             except:
-                logger.debug('Attempt {}/{} to open {} failed. Retrying '
-                             'in {} seconds'.format(attempt+1, n_attempts, args[0], sleep_time))
+                logger.debug(
+                    "Attempt {}/{} to open {} failed. Retrying "
+                    "in {} seconds".format(attempt + 1, n_attempts, args[0], sleep_time)
+                )
                 time.sleep(sleep_time)
 
         # Check if file exists and warn if asked
@@ -386,7 +438,7 @@ class MultiStateReporter(object):
         # At the very last attempt, we try setting the environment variable
         # controlling the locking mechanism of HDF5 (see choderalab/yank#1165).
         if n_attempts > 1:
-            os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+            os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
         # Last attempt finally raises any error.
         return netcdf.Dataset(*args, **kwargs)
@@ -399,23 +451,23 @@ class MultiStateReporter(object):
         """
         from openmmtools import __version__
 
-        if 'scalar' not in ncfile.dimensions:
+        if "scalar" not in ncfile.dimensions:
             # Create common dimensions.
-            ncfile.createDimension('scalar', 1)  # Scalar dimension.
-            ncfile.createDimension('iteration', 0)  # Unlimited number of iterations.
-            ncfile.createDimension('spatial', 3)  # Number of spatial dimensions.
+            ncfile.createDimension("scalar", 1)  # Scalar dimension.
+            ncfile.createDimension("iteration", 0)  # Unlimited number of iterations.
+            ncfile.createDimension("spatial", 3)  # Number of spatial dimensions.
 
             # Set global attributes.
-            ncfile.application = 'YANK'
-            ncfile.program = 'yank.py'
+            ncfile.application = "YANK"
+            ncfile.program = "yank.py"
             ncfile.programVersion = __version__
             ncfile.Conventions = convention
-            ncfile.ConventionVersion = '0.2'
+            ncfile.ConventionVersion = "0.2"
             ncfile.DataUsedFor = nc_name
             ncfile.CheckpointInterval = self._checkpoint_interval
 
             # Create and initialize the global variables
-            nc_last_good_iter = ncfile.createVariable('last_iteration', int, 'scalar')
+            nc_last_good_iter = ncfile.createVariable("last_iteration", int, "scalar")
             nc_last_good_iter[0] = 0
 
             return True
@@ -429,7 +481,7 @@ class MultiStateReporter(object):
                 if storage.isopen():
                     storage.sync()
                     storage.close()
-            setattr(self, '_storage' + storage_name, None)
+            setattr(self, "_storage" + storage_name, None)
 
     def sync(self):
         """Force any buffer to be flushed to the file"""
@@ -451,10 +503,10 @@ class MultiStateReporter(object):
         """
         end_thermodynamic_states = list()
 
-        if 'unsampled_states' in self._storage_analysis.groups:
-            state_type = 'unsampled_states'
+        if "unsampled_states" in self._storage_analysis.groups:
+            state_type = "unsampled_states"
         else:
-            state_type = 'thermodynamic_states'
+            state_type = "thermodynamic_states"
 
         # Read thermodynamic end states
         states_serializations = dict()
@@ -470,41 +522,58 @@ class MultiStateReporter(object):
             inner_id : int
                 Which state to pull data from
             """
-            inner_serialized_state = self.read_dict('{}/state{}'.format(inner_type, inner_id))
+            inner_serialized_state = self.read_dict(
+                "{}/state{}".format(inner_type, inner_id)
+            )
 
             def isolate_thermodynamic_state(isolating_serialized_state):
-                """Helper function to find true bottom level thermodynamic state from any level of nesting, reduce code
-                """
+                """Helper function to find true bottom level thermodynamic state from any level of nesting, reduce code"""
                 isolating_serial_thermodynamic_state = isolating_serialized_state
-                while 'thermodynamic_state' in isolating_serial_thermodynamic_state:
+                while "thermodynamic_state" in isolating_serial_thermodynamic_state:
                     # The while loop is necessary for nested CompoundThermodynamicStates.
-                    isolating_serial_thermodynamic_state = isolating_serial_thermodynamic_state['thermodynamic_state']
+                    isolating_serial_thermodynamic_state = (
+                        isolating_serial_thermodynamic_state["thermodynamic_state"]
+                    )
                 return isolating_serial_thermodynamic_state
 
-            serialized_thermodynamic_state = isolate_thermodynamic_state(inner_serialized_state)
+            serialized_thermodynamic_state = isolate_thermodynamic_state(
+                inner_serialized_state
+            )
             # Check if the standard state is in a previous state.
             try:
-                standard_system_name = serialized_thermodynamic_state.pop('_Reporter__compatible_state')
+                standard_system_name = serialized_thermodynamic_state.pop(
+                    "_Reporter__compatible_state"
+                )
             except KeyError:
                 # Cache the standard system serialization for future usage.
-                standard_system_name = '{}/{}'.format(inner_type, inner_id)
-                states_serializations[standard_system_name] = serialized_thermodynamic_state['standard_system']
+                standard_system_name = "{}/{}".format(inner_type, inner_id)
+                states_serializations[
+                    standard_system_name
+                ] = serialized_thermodynamic_state["standard_system"]
             else:
                 # The system serialization can be retrieved from another state.
                 # Because the unsampled states rely on the thermodynamic states for their deserialization, we have
                 # to try a secondary/recursive loop to get the thermodynamic states
                 # However, this loop happens less often as the states_serializations dict fills up.
                 try:
-                    serialized_standard_system = states_serializations[standard_system_name]
+                    serialized_standard_system = states_serializations[
+                        standard_system_name
+                    ]
                 except KeyError:
-                    loop_type, loop_id = standard_system_name.split('/')
+                    loop_type, loop_id = standard_system_name.split("/")
                     looped_standard_state = extract_serialized_state(loop_type, loop_id)
-                    looped_serial_thermodynamic_state = isolate_thermodynamic_state(looped_standard_state)
-                    serialized_standard_system = looped_serial_thermodynamic_state['standard_system']
-                serialized_thermodynamic_state['standard_system'] = serialized_standard_system
+                    looped_serial_thermodynamic_state = isolate_thermodynamic_state(
+                        looped_standard_state
+                    )
+                    serialized_standard_system = looped_serial_thermodynamic_state[
+                        "standard_system"
+                    ]
+                serialized_thermodynamic_state[
+                    "standard_system"
+                ] = serialized_standard_system
             return inner_serialized_state
 
-        for state_id in [0, n_states-1]:
+        for state_id in [0, n_states - 1]:
             serialized_state = extract_serialized_state(state_type, state_id)
 
             # Create ThermodynamicState object.
@@ -512,7 +581,7 @@ class MultiStateReporter(object):
 
         return end_thermodynamic_states
 
-    @with_timer('Reading thermodynamic states from storage')
+    @with_timer("Reading thermodynamic states from storage")
     def read_thermodynamic_states(self):
         """Retrieve the stored thermodynamic states from the checkpoint file.
 
@@ -531,8 +600,9 @@ class MultiStateReporter(object):
         """
         # We have to parse the thermodynamic states first because the
         # unsampled states may refer to them for the serialized system.
-        states = collections.OrderedDict([('thermodynamic_states', list()),
-                                          ('unsampled_states', list())])
+        states = collections.OrderedDict(
+            [("thermodynamic_states", list()), ("unsampled_states", list())]
+        )
 
         # Caches standard_system_name: serialized_standard_system
         states_serializations = dict()
@@ -541,38 +611,50 @@ class MultiStateReporter(object):
         for state_type, state_list in states.items():
             # There may not be unsampled states.
             if state_type not in self._storage_analysis.groups:
-                assert state_type == 'unsampled_states'
+                assert state_type == "unsampled_states"
                 continue
 
             # We keep looking for states until we can't find them anymore.
             n_states = len(self._storage_analysis.groups[state_type].variables)
             for state_id in range(n_states):
-                serialized_state = self.read_dict('{}/state{}'.format(state_type, state_id))
+                serialized_state = self.read_dict(
+                    "{}/state{}".format(state_type, state_id)
+                )
 
                 # Find the thermodynamic state representation.
                 serialized_thermodynamic_state = serialized_state
-                while 'thermodynamic_state' in serialized_thermodynamic_state:
+                while "thermodynamic_state" in serialized_thermodynamic_state:
                     # The while loop is necessary for nested CompoundThermodynamicStates.
-                    serialized_thermodynamic_state = serialized_thermodynamic_state['thermodynamic_state']
+                    serialized_thermodynamic_state = serialized_thermodynamic_state[
+                        "thermodynamic_state"
+                    ]
 
                 # Check if the standard state is in a previous state.
                 try:
-                    standard_system_name = serialized_thermodynamic_state.pop('_Reporter__compatible_state')
+                    standard_system_name = serialized_thermodynamic_state.pop(
+                        "_Reporter__compatible_state"
+                    )
                 except KeyError:
                     # Cache the standard system serialization for future usage.
-                    standard_system_name = '{}/{}'.format(state_type, state_id)
-                    states_serializations[standard_system_name] = serialized_thermodynamic_state['standard_system']
+                    standard_system_name = "{}/{}".format(state_type, state_id)
+                    states_serializations[
+                        standard_system_name
+                    ] = serialized_thermodynamic_state["standard_system"]
                 else:
                     # The system serialization can be retrieved from another state.
-                    serialized_standard_system = states_serializations[standard_system_name]
-                    serialized_thermodynamic_state['standard_system'] = serialized_standard_system
+                    serialized_standard_system = states_serializations[
+                        standard_system_name
+                    ]
+                    serialized_thermodynamic_state[
+                        "standard_system"
+                    ] = serialized_standard_system
 
                 # Create ThermodynamicState object.
                 states[state_type].append(deserialize(serialized_state))
 
-        return [states['thermodynamic_states'], states['unsampled_states']]
+        return [states["thermodynamic_states"], states["unsampled_states"]]
 
-    @with_timer('Storing thermodynamic states')
+    @with_timer("Storing thermodynamic states")
     def write_thermodynamic_states(self, thermodynamic_states, unsampled_states):
         """Store all the ThermodynamicStates to the checkpoint file.
 
@@ -592,44 +674,64 @@ class MultiStateReporter(object):
         stored_states = dict()
 
         def unnest_thermodynamic_state(serialized):
-            while 'thermodynamic_state' in serialized:
-                serialized = serialized['thermodynamic_state']
+            while "thermodynamic_state" in serialized:
+                serialized = serialized["thermodynamic_state"]
             return serialized
 
-        for state_type, states in [('thermodynamic_states', thermodynamic_states),
-                                   ('unsampled_states', unsampled_states)]:
+        for state_type, states in [
+            ("thermodynamic_states", thermodynamic_states),
+            ("unsampled_states", unsampled_states),
+        ]:
             for state_id, state in enumerate(states):
                 # Check if any compatible state has been found
                 found_compatible_state = False
                 for compare_state in stored_states:
                     if compare_state.is_state_compatible(state):
                         serialized_state = serialize(state, skip_system=True)
-                        serialized_thermodynamic_state = unnest_thermodynamic_state(serialized_state)
-                        serialized_thermodynamic_state.pop('standard_system')  # Remove the unneeded system object
+                        serialized_thermodynamic_state = unnest_thermodynamic_state(
+                            serialized_state
+                        )
+                        serialized_thermodynamic_state.pop(
+                            "standard_system"
+                        )  # Remove the unneeded system object
                         reference_state_name = stored_states[compare_state]
-                        serialized_thermodynamic_state['_Reporter__compatible_state'] = reference_state_name
+                        serialized_thermodynamic_state[
+                            "_Reporter__compatible_state"
+                        ] = reference_state_name
                         found_compatible_state = True
                         break
 
                 # If no compatible state is found, do full serialization
                 if not found_compatible_state:
                     serialized_state = serialize(state)
-                    serialized_thermodynamic_state = unnest_thermodynamic_state(serialized_state)
-                    serialized_standard_system = serialized_thermodynamic_state['standard_system']
+                    serialized_thermodynamic_state = unnest_thermodynamic_state(
+                        serialized_state
+                    )
+                    serialized_standard_system = serialized_thermodynamic_state[
+                        "standard_system"
+                    ]
 
-                    reference_state_name = '{}/{}'.format(state_type, state_id)
+                    reference_state_name = "{}/{}".format(state_type, state_id)
                     len_serialization = len(serialized_standard_system)
 
                     # Store new compatibility data
                     stored_states[state] = reference_state_name
 
-                    logger.debug("Serialized state {} is  {}B | {:.3f}KB | {:.3f}MB".format(
-                        reference_state_name, len_serialization, len_serialization/1024.0,
-                        len_serialization/1024.0/1024.0))
+                    logger.debug(
+                        "Serialized state {} is  {}B | {:.3f}KB | {:.3f}MB".format(
+                            reference_state_name,
+                            len_serialization,
+                            len_serialization / 1024.0,
+                            len_serialization / 1024.0 / 1024.0,
+                        )
+                    )
 
                 # Finally write the dictionary with fixed dimension to improve compression.
-                self._write_dict('{}/state{}'.format(state_type, state_id),
-                                 serialized_state, fixed_dimension=True)
+                self._write_dict(
+                    "{}/state{}".format(state_type, state_id),
+                    serialized_state,
+                    fixed_dimension=True,
+                )
 
     def read_sampler_states(self, iteration, analysis_particles_only=False):
         """Retrieve the stored sampler states on the checkpoint file
@@ -659,15 +761,19 @@ class MultiStateReporter(object):
         """
         if analysis_particles_only:
             if len(self._analysis_particle_indices) == 0:
-                raise ValueError("No particles were flagged for special analysis! "
-                                 "No such trajectory would have been written!")
-            return self._read_sampler_states_from_given_file(iteration, storage_file='analysis',
-                                                             obey_checkpoint_interval=False)
+                raise ValueError(
+                    "No particles were flagged for special analysis! "
+                    "No such trajectory would have been written!"
+                )
+            return self._read_sampler_states_from_given_file(
+                iteration, storage_file="analysis", obey_checkpoint_interval=False
+            )
         else:
-            return self._read_sampler_states_from_given_file(iteration, storage_file='checkpoint',
-                                                             obey_checkpoint_interval=True)
+            return self._read_sampler_states_from_given_file(
+                iteration, storage_file="checkpoint", obey_checkpoint_interval=True
+            )
 
-    @with_timer('Storing sampler states')
+    @with_timer("Storing sampler states")
     def write_sampler_states(self, sampler_states: list, iteration: int):
         """Store all sampler states for a given iteration on the checkpoint file
 
@@ -683,8 +789,12 @@ class MultiStateReporter(object):
 
         """
         # Case of no special atoms, write to normal checkpoint
-        self._write_sampler_states_to_given_file(sampler_states, iteration, storage_file='checkpoint',
-                                                 obey_checkpoint_interval=True)
+        self._write_sampler_states_to_given_file(
+            sampler_states,
+            iteration,
+            storage_file="checkpoint",
+            obey_checkpoint_interval=True,
+        )
         if len(self._analysis_particle_indices) > 0:
             # Special case, pre-process the sampler_states
             sampler_subset = []
@@ -698,10 +808,19 @@ class MultiStateReporter(object):
                 if sampler_state._unitless_velocities is not None:
                     velocities = sampler_state.velocities
                     velocities_subset = velocities[self._analysis_particle_indices, :]
-                sampler_subset.append(states.SamplerState(position_subset, velocities=velocities_subset,
-                                                                  box_vectors=sampler_state.box_vectors))
-            self._write_sampler_states_to_given_file(sampler_subset, iteration, storage_file='analysis',
-                                                     obey_checkpoint_interval=False)
+                sampler_subset.append(
+                    states.SamplerState(
+                        position_subset,
+                        velocities=velocities_subset,
+                        box_vectors=sampler_state.box_vectors,
+                    )
+                )
+            self._write_sampler_states_to_given_file(
+                sampler_subset,
+                iteration,
+                storage_file="analysis",
+                obey_checkpoint_interval=False,
+            )
 
     def read_replica_thermodynamic_states(self, iteration=slice(None)):
         """Retrieve the indices of the ThermodynamicStates for each replica on the analysis file
@@ -721,8 +840,10 @@ class MultiStateReporter(object):
 
         """
         iteration = self._map_iteration_to_good(iteration)
-        logger.debug('read_replica_thermodynamic_states: iteration = {}'.format(iteration))
-        return self._storage_analysis.variables['states'][iteration].astype(np.int64)
+        logger.debug(
+            "read_replica_thermodynamic_states: iteration = {}".format(iteration)
+        )
+        return self._storage_analysis.variables["states"][iteration].astype(np.int64)
 
     def write_replica_thermodynamic_states(self, state_indices, iteration):
         """Store the indices of the ThermodynamicStates for each replica on the analysis file
@@ -738,23 +859,28 @@ class MultiStateReporter(object):
 
         """
         # Initialize schema if needed.
-        if 'states' not in self._storage_analysis.variables:
+        if "states" not in self._storage_analysis.variables:
             n_replicas = len(state_indices)
 
             # Create dimension if they don't exist.
-            self._ensure_dimension_exists('replica', n_replicas)
+            self._ensure_dimension_exists("replica", n_replicas)
 
             # Create variables and attach units and description.
             ncvar_states = self._storage_analysis.createVariable(
-                'states', 'i4', ('iteration', 'replica'),
-                zlib=False, chunksizes=(1, n_replicas)
+                "states",
+                "i4",
+                ("iteration", "replica"),
+                zlib=False,
+                chunksizes=(1, n_replicas),
             )
-            ncvar_states.units = 'none'
-            ncvar_states.long_name = ("states[iteration][replica] is the thermodynamic state index "
-                                      "(0..n_states-1) of replica 'replica' of iteration 'iteration'.")
+            ncvar_states.units = "none"
+            ncvar_states.long_name = (
+                "states[iteration][replica] is the thermodynamic state index "
+                "(0..n_states-1) of replica 'replica' of iteration 'iteration'."
+            )
 
         # Store thermodynamic states indices.
-        self._storage_analysis.variables['states'][iteration, :] = state_indices[:]
+        self._storage_analysis.variables["states"][iteration, :] = state_indices[:]
 
     def read_mcmc_moves(self):
         """Return the MCMCMoves of the :class:`yank.multistate.MultiStateSampler` simulation on the checkpoint
@@ -765,12 +891,12 @@ class MultiStateReporter(object):
             The MCMCMoves used to propagate the simulation.
 
         """
-        n_moves = len(self._storage_analysis.groups['mcmc_moves'].variables)
+        n_moves = len(self._storage_analysis.groups["mcmc_moves"].variables)
 
         # Retrieve all moves in order.
         mcmc_moves = list()
         for move_id in range(n_moves):
-            serialized_move = self.read_dict('mcmc_moves/move{}'.format(move_id))
+            serialized_move = self.read_dict("mcmc_moves/move{}".format(move_id))
             mcmc_moves.append(deserialize(serialized_move))
         return mcmc_moves
 
@@ -785,7 +911,7 @@ class MultiStateReporter(object):
         """
         for move_id, move in enumerate(mcmc_moves):
             serialized_move = serialize(move)
-            self.write_dict('mcmc_moves/move{}'.format(move_id), serialized_move)
+            self.write_dict("mcmc_moves/move{}".format(move_id), serialized_move)
 
     def read_energies(self, iteration=slice(None)):
         """Retrieve the energy matrix at the given iteration on the analysis file
@@ -811,22 +937,39 @@ class MultiStateReporter(object):
         # Determine last consistent iteration
         iteration = self._map_iteration_to_good(iteration)
         # Retrieve energies at all thermodynamic states
-        energy_thermodynamic_states = np.array(self._storage_analysis.variables['energies'][iteration, :, :], np.float64)
+        energy_thermodynamic_states = np.array(
+            self._storage_analysis.variables["energies"][iteration, :, :], np.float64
+        )
         # Retrieve neighborhoods, assuming global neighborhoods if reading a pre-neighborhoods file
         try:
-            energy_neighborhoods = np.array(self._storage_analysis.variables['neighborhoods'][iteration, :, :], 'i1')
+            energy_neighborhoods = np.array(
+                self._storage_analysis.variables["neighborhoods"][iteration, :, :], "i1"
+            )
         except KeyError:
-            energy_neighborhoods = np.ones(energy_thermodynamic_states.shape, 'i1')
+            energy_neighborhoods = np.ones(energy_thermodynamic_states.shape, "i1")
         # Read energies at unsampled states, if present
         try:
-            energy_unsampled_states = np.array(self._storage_analysis.variables['unsampled_energies'][iteration, :, :], np.float64)
+            energy_unsampled_states = np.array(
+                self._storage_analysis.variables["unsampled_energies"][iteration, :, :],
+                np.float64,
+            )
         except KeyError:
             # There are no unsampled thermodynamic states.
             unsampled_shape = energy_thermodynamic_states.shape[:-1] + (0,)
             energy_unsampled_states = np.zeros(unsampled_shape)
-        return energy_thermodynamic_states, energy_neighborhoods, energy_unsampled_states
+        return (
+            energy_thermodynamic_states,
+            energy_neighborhoods,
+            energy_unsampled_states,
+        )
 
-    def write_energies(self, energy_thermodynamic_states, energy_neighborhoods, energy_unsampled_states, iteration):
+    def write_energies(
+        self,
+        energy_thermodynamic_states,
+        energy_neighborhoods,
+        energy_unsampled_states,
+        iteration,
+    ):
         """Store the energy matrix at the given iteration on the analysis file
 
         Parameters
@@ -847,51 +990,71 @@ class MultiStateReporter(object):
         n_replicas, n_states = energy_thermodynamic_states.shape
 
         # Create dimensions and variables if they weren't created by other functions.
-        self._ensure_dimension_exists('replica', n_replicas)
-        self._ensure_dimension_exists('state', n_states)
-        if 'energies' not in self._storage_analysis.variables:
+        self._ensure_dimension_exists("replica", n_replicas)
+        self._ensure_dimension_exists("state", n_states)
+        if "energies" not in self._storage_analysis.variables:
             ncvar_energies = self._storage_analysis.createVariable(
-                'energies', 'f8', ('iteration', 'replica', 'state'),
-                zlib=False, chunksizes=(1, n_replicas, n_states)
+                "energies",
+                "f8",
+                ("iteration", "replica", "state"),
+                zlib=False,
+                chunksizes=(1, n_replicas, n_states),
             )
-            ncvar_energies.units = 'kT'
-            ncvar_energies.long_name = ("energies[iteration][replica][state] is the reduced (unitless) "
-                                        "energy of replica 'replica' from iteration 'iteration' evaluated "
-                                        "at the thermodynamic state 'state'.")
+            ncvar_energies.units = "kT"
+            ncvar_energies.long_name = (
+                "energies[iteration][replica][state] is the reduced (unitless) "
+                "energy of replica 'replica' from iteration 'iteration' evaluated "
+                "at the thermodynamic state 'state'."
+            )
 
-        if 'neighborhoods' not in self._storage_analysis.variables:
+        if "neighborhoods" not in self._storage_analysis.variables:
             ncvar_neighborhoods = self._storage_analysis.createVariable(
-                'neighborhoods', 'i1', ('iteration', 'replica', 'state'),
-                zlib=False, fill_value=1, # old-style files will be upgraded to have all states
-                chunksizes=(1, n_replicas, n_states)
+                "neighborhoods",
+                "i1",
+                ("iteration", "replica", "state"),
+                zlib=False,
+                fill_value=1,  # old-style files will be upgraded to have all states
+                chunksizes=(1, n_replicas, n_states),
             )
-            ncvar_neighborhoods.long_name = ("neighborhoods[iteration][replica][state] is 1 if "
-                                             "this energy was computed during this iteration.")
+            ncvar_neighborhoods.long_name = (
+                "neighborhoods[iteration][replica][state] is 1 if "
+                "this energy was computed during this iteration."
+            )
 
-        if 'unsampled_energies' not in self._storage_analysis.variables:
+        if "unsampled_energies" not in self._storage_analysis.variables:
             # Check if we have unsampled states.
             if energy_unsampled_states.shape[1] > 0:
                 n_unsampled_states = len(energy_unsampled_states[0])
-                self._ensure_dimension_exists('unsampled', n_unsampled_states)
+                self._ensure_dimension_exists("unsampled", n_unsampled_states)
 
-                if 'unsampled_energies' not in self._storage_analysis.variables:
+                if "unsampled_energies" not in self._storage_analysis.variables:
 
                     # Create variable for thermodynamic state energies with units and descriptions.
                     ncvar_unsampled = self._storage_analysis.createVariable(
-                        'unsampled_energies', 'f8', ('iteration', 'replica', 'unsampled'),
-                        zlib=False, chunksizes=(1, n_replicas, n_unsampled_states)
+                        "unsampled_energies",
+                        "f8",
+                        ("iteration", "replica", "unsampled"),
+                        zlib=False,
+                        chunksizes=(1, n_replicas, n_unsampled_states),
                     )
-                    ncvar_unsampled.units = 'kT'
-                    ncvar_unsampled.long_name = ("unsampled_energies[iteration][replica][state] is the reduced "
-                                                 "(unitless) energy of replica 'replica' from iteration 'iteration' "
-                                                 "evaluated at unsampled thermodynamic state 'state'.")
+                    ncvar_unsampled.units = "kT"
+                    ncvar_unsampled.long_name = (
+                        "unsampled_energies[iteration][replica][state] is the reduced "
+                        "(unitless) energy of replica 'replica' from iteration 'iteration' "
+                        "evaluated at unsampled thermodynamic state 'state'."
+                    )
 
         # Store values
-        self._storage_analysis.variables['energies'][iteration,:,:] = energy_thermodynamic_states
-        self._storage_analysis.variables['neighborhoods'][iteration,:,:] = energy_neighborhoods
+        self._storage_analysis.variables["energies"][
+            iteration, :, :
+        ] = energy_thermodynamic_states
+        self._storage_analysis.variables["neighborhoods"][
+            iteration, :, :
+        ] = energy_neighborhoods
         if energy_unsampled_states.shape[1] > 0:
-            self._storage_analysis.variables['unsampled_energies'][iteration, :, :] = energy_unsampled_states[:, :]
-
+            self._storage_analysis.variables["unsampled_energies"][
+                iteration, :, :
+            ] = energy_unsampled_states[:, :]
 
     def read_mixing_statistics(self, iteration=slice(None)):
         """Retrieve the mixing statistics for the given iteration on the analysis file
@@ -914,8 +1077,12 @@ class MultiStateReporter(object):
 
         """
         iteration = self._map_iteration_to_good(iteration)
-        n_accepted_matrix = self._storage_analysis.variables['accepted'][iteration, :, :].astype(np.int64)
-        n_proposed_matrix = self._storage_analysis.variables['proposed'][iteration, :, :].astype(np.int64)
+        n_accepted_matrix = self._storage_analysis.variables["accepted"][
+            iteration, :, :
+        ].astype(np.int64)
+        n_proposed_matrix = self._storage_analysis.variables["proposed"][
+            iteration, :, :
+        ].astype(np.int64)
         return n_accepted_matrix, n_proposed_matrix
 
     def write_mixing_statistics(self, n_accepted_matrix, n_proposed_matrix, iteration):
@@ -936,31 +1103,45 @@ class MultiStateReporter(object):
 
         """
         # Create schema if necessary.
-        if 'accepted' not in self._storage_analysis.variables:
+        if "accepted" not in self._storage_analysis.variables:
             n_states = n_accepted_matrix.shape[0]
 
             # Create dimension if it doesn't already exist
-            self._ensure_dimension_exists('state', n_states)
+            self._ensure_dimension_exists("state", n_states)
 
             # Create variables with units and descriptions.
             ncvar_accepted = self._storage_analysis.createVariable(
-                'accepted', 'i4', ('iteration', 'state', 'state'),
-                zlib=False, chunksizes=(1, n_states, n_states)
+                "accepted",
+                "i4",
+                ("iteration", "state", "state"),
+                zlib=False,
+                chunksizes=(1, n_states, n_states),
             )
             ncvar_proposed = self._storage_analysis.createVariable(
-                'proposed', 'i4', ('iteration', 'state', 'state'),
-                zlib=False, chunksizes=(1, n_states, n_states)
+                "proposed",
+                "i4",
+                ("iteration", "state", "state"),
+                zlib=False,
+                chunksizes=(1, n_states, n_states),
             )
-            ncvar_accepted.units = 'none'
-            ncvar_proposed.units = 'none'
-            ncvar_accepted.long_name = ("accepted[iteration][i][j] is the number of proposed transitions "
-                                        "between states i and j from iteration 'iteration-1'.")
-            ncvar_proposed.long_name = ("proposed[iteration][i][j] is the number of proposed transitions "
-                                        "between states i and j from iteration 'iteration-1'.")
+            ncvar_accepted.units = "none"
+            ncvar_proposed.units = "none"
+            ncvar_accepted.long_name = (
+                "accepted[iteration][i][j] is the number of proposed transitions "
+                "between states i and j from iteration 'iteration-1'."
+            )
+            ncvar_proposed.long_name = (
+                "proposed[iteration][i][j] is the number of proposed transitions "
+                "between states i and j from iteration 'iteration-1'."
+            )
 
         # Store statistics.
-        self._storage_analysis.variables['accepted'][iteration, :, :] = n_accepted_matrix[:, :]
-        self._storage_analysis.variables['proposed'][iteration, :, :] = n_proposed_matrix[:, :]
+        self._storage_analysis.variables["accepted"][
+            iteration, :, :
+        ] = n_accepted_matrix[:, :]
+        self._storage_analysis.variables["proposed"][
+            iteration, :, :
+        ] = n_proposed_matrix[:, :]
 
     def read_timestamp(self, iteration=slice(None)):
         """Return the timestamp for the given iteration.
@@ -979,7 +1160,7 @@ class MultiStateReporter(object):
 
         """
         iteration = self._map_iteration_to_good(iteration)
-        return self._storage_analysis.variables['timestamp'][iteration]
+        return self._storage_analysis.variables["timestamp"][iteration]
 
     def write_timestamp(self, iteration: int):
         """Store a timestamp for the given iteration on both analysis and checkpoint file.
@@ -994,15 +1175,18 @@ class MultiStateReporter(object):
         """
         # Create variable if needed.
         for storage_key, storage in self._storage_dict.items():
-            if 'timestamp' not in storage.variables:
-                storage.createVariable('timestamp', str, ('iteration',),
-                                       zlib=False, chunksizes=(1,))
+            if "timestamp" not in storage.variables:
+                storage.createVariable(
+                    "timestamp", str, ("iteration",), zlib=False, chunksizes=(1,)
+                )
 
         timestamp = time.ctime()
-        self._storage_analysis.variables['timestamp'][iteration] = timestamp
+        self._storage_analysis.variables["timestamp"][iteration] = timestamp
         checkpoint_iteration = self._calculate_checkpoint_iteration(iteration)
         if checkpoint_iteration is not None:
-            self._storage_checkpoint.variables['timestamp'][checkpoint_iteration] = timestamp
+            self._storage_checkpoint.variables["timestamp"][
+                checkpoint_iteration
+            ] = timestamp
 
     def read_dict(self, path: str) -> Union[dict, Any]:
         """Restore a dictionary from the storage file.
@@ -1035,7 +1219,7 @@ class MultiStateReporter(object):
         {'info': [1, 2, 3]}
 
         """
-        storage = 'analysis'
+        storage = "analysis"
 
         # Get lowest possible NC variable/group. The path might refer
         # to the keyword of a dictionary that was saved in a single variable.
@@ -1046,7 +1230,7 @@ class MultiStateReporter(object):
                 nc_element = self._resolve_nc_path(path, storage)
             except KeyError:
                 # Try the higher level.
-                path, dict_key = path.rsplit(sep='/', maxsplit=1)
+                path, dict_key = path.rsplit(sep="/", maxsplit=1)
                 dict_path.insert(0, dict_key)
 
         # If this is a group, the dictionary has been nested.
@@ -1054,11 +1238,11 @@ class MultiStateReporter(object):
             data = {}
             for elements in [nc_element.groups, nc_element.variables]:
                 for key in elements:
-                    data.update({key: self.read_dict(path + '/' + key)})
+                    data.update({key: self.read_dict(path + "/" + key)})
 
         # Otherwise this is a variable.
         else:
-            if nc_element.dtype == 'S1':
+            if nc_element.dtype == "S1":
                 # Handle variables stored in fixed_dimensions
                 data_chars = nc_element[:]
                 data_str = data_chars.tostring().decode()
@@ -1067,8 +1251,8 @@ class MultiStateReporter(object):
             data = yaml.load(data_str, Loader=_DictYamlLoader)
 
         # Restore the title in the metadata.
-        if path == 'metadata':
-            data['title'] = self._storage_dict[storage].title
+        if path == "metadata":
+            data["title"] = self._storage_dict[storage].title
 
         # Resolve the rest of the path that was saved un-nested.
         for dict_key in dict_path:
@@ -1086,21 +1270,22 @@ class MultiStateReporter(object):
             The dict to store.
 
         """
-        storage_name = 'analysis'
+        storage_name = "analysis"
 
-        if path == 'metadata':
+        if path == "metadata":
             # General NetCDF conventions assume the title of the dataset
             # to be specified as a global attribute, but the user can
             # specify their own titles only in metadata.
             data = copy.deepcopy(data)
-            self._storage_dict[storage_name].title = data.pop('title')
+            self._storage_dict[storage_name].title = data.pop("title")
 
             # Metadata is pretty big, read-only attribute (it contains the
             # reference state and the topography), and AlchemicalPhase has
             # to read the name of the sampler for resuming and checking the
             # status, so we store it compressed and in nested form.
-            self._write_dict(path, data, storage_name=storage_name,
-                             fixed_dimension=True, nested=True)
+            self._write_dict(
+                path, data, storage_name=storage_name, fixed_dimension=True, nested=True
+            )
         else:
             self._write_dict(path, data, storage_name=storage_name)
 
@@ -1113,8 +1298,14 @@ class MultiStateReporter(object):
         checkpoints : np.ndarray of int
             All checkpoints from initial iteration to current
         """
-        return np.array(range(0, self.read_last_iteration(last_checkpoint=True)+1, self._checkpoint_interval),
-                        dtype=int)
+        return np.array(
+            range(
+                0,
+                self.read_last_iteration(last_checkpoint=True) + 1,
+                self._checkpoint_interval,
+            ),
+            dtype=int,
+        )
 
     def read_last_iteration(self, last_checkpoint=True):
         """
@@ -1132,7 +1323,7 @@ class MultiStateReporter(object):
 
         """
         # Make sure this is returned as Python int.
-        last_iteration = int(self._storage_analysis.variables['last_iteration'][0])
+        last_iteration = int(self._storage_analysis.variables["last_iteration"][0])
 
         # Get last checkpoint.
         if last_checkpoint:
@@ -1140,9 +1331,11 @@ class MultiStateReporter(object):
             for i in range(last_iteration, -1, -1):
                 if self._calculate_checkpoint_iteration(i) is not None:
                     return i
-            raise RuntimeError("Could not find a checkpoint! This should not happen "
-                               "as the 0th iteration should always be written! "
-                               "Please open a ticket on the YANK GitHub page if you see this error message!")
+            raise RuntimeError(
+                "Could not find a checkpoint! This should not happen "
+                "as the 0th iteration should always be written! "
+                "Please open a ticket on the YANK GitHub page if you see this error message!"
+            )
         return last_iteration
 
     def write_last_iteration(self, iteration):
@@ -1161,7 +1354,7 @@ class MultiStateReporter(object):
             Iteration at which the last good data point was written.
         """
         self.sync()
-        self._storage_analysis.variables['last_iteration'][0] = iteration
+        self._storage_analysis.variables["last_iteration"][0] = iteration
         self.sync()
 
     def read_logZ(self, iteration):
@@ -1181,7 +1374,7 @@ class MultiStateReporter(object):
             Dimensionless logZ
         """
         data = self.read_online_analysis_data(iteration, "logZ")
-        return data['logZ']
+        return data["logZ"]
 
     def write_logZ(self, iteration: int, logZ: np.ndarray):
         """
@@ -1242,9 +1435,10 @@ class MultiStateReporter(object):
             raise ValueError("None of the requested keys could be found on disk!")
         # Found some things possibly named wrong, still nothing to return
         elif not collected_variables:
-            base_error = ("No variables found on disk with{} per-iteration data, but we did find the following "
-                          "variables of the same name with{} per-iteration data. Possibly you meant those?"
-                          )
+            base_error = (
+                "No variables found on disk with{} per-iteration data, but we did find the following "
+                "variables of the same name with{} per-iteration data. Possibly you meant those?"
+            )
             for failure in collected_iteration_failure:
                 base_error += "\n\t-{}".format(failure)
             if iteration is None:
@@ -1252,8 +1446,10 @@ class MultiStateReporter(object):
             else:
                 raise ValueError(base_error.format("", "out"))
         elif collected_iteration_failure or collected_not_found:
-            base_warn = ("Some requested variables were found, others were missing or found on disk under {}per"
-                         "-iteration data:")
+            base_warn = (
+                "Some requested variables were found, others were missing or found on disk under {}per"
+                "-iteration data:"
+            )
             if iteration is None:
                 iteration_str = ""
             else:
@@ -1328,17 +1524,21 @@ class MultiStateReporter(object):
         data: dict
             Dictionary with the key, value pairs to store in YAML format.
         """
-        reporter_dir, reporter_filename = os.path.split(self._storage_analysis_file_path)
+        reporter_dir, reporter_filename = os.path.split(
+            self._storage_analysis_file_path
+        )
         # remove extension from filename
         yaml_prefix = os.path.splitext(reporter_filename)[0]
-        output_filepath = os.path.join(reporter_dir, f"{yaml_prefix}_real_time_analysis.yaml")
+        output_filepath = os.path.join(
+            reporter_dir, f"{yaml_prefix}_real_time_analysis.yaml"
+        )
         # Remove if it is a fresh reporter session
         if self._overwrite_statistics:
             try:
                 os.remove(output_filepath)
             except FileNotFoundError:
                 pass
-            self._overwrite_statistics = False # Append from now on
+            self._overwrite_statistics = False  # Append from now on
         with open(output_filepath, "a") as out_file:
             out_file.write(yaml.dump([data], sort_keys=False))
 
@@ -1351,12 +1551,20 @@ class MultiStateReporter(object):
         if iteration is not None:
             variable = variable + "_history"
         if variable not in storage.variables:
-            variable_parameters = self._determine_netcdf_variable_parameters(iteration, data, storage)
-            logger.debug('Creating new NetCDF variable %s with parameters: %s' % (variable, variable_parameters)) # DEBUG
-            storage.createVariable(variable, variable_parameters['dtype'],
-                                   dimensions=variable_parameters['dims'],
-                                   chunksizes=variable_parameters['chunksizes'],
-                                   zlib=False)
+            variable_parameters = self._determine_netcdf_variable_parameters(
+                iteration, data, storage
+            )
+            logger.debug(
+                "Creating new NetCDF variable %s with parameters: %s"
+                % (variable, variable_parameters)
+            )  # DEBUG
+            storage.createVariable(
+                variable,
+                variable_parameters["dtype"],
+                dimensions=variable_parameters["dims"],
+                chunksizes=variable_parameters["chunksizes"],
+                zlib=False,
+            )
 
         # Get the variable
         nc_var = storage[variable]
@@ -1427,7 +1635,7 @@ class MultiStateReporter(object):
         else:
             dims = (data_dim,)
             chunks = (size,)
-        return {'dtype': dtype, 'dims': dims, 'chunksizes': chunks}
+        return {"dtype": dtype, "dims": dims, "chunksizes": chunks}
 
     @staticmethod
     def _resolve_iteration_args(iteration_arg):
@@ -1436,7 +1644,9 @@ class MultiStateReporter(object):
         """
         err_message = "Only an int or None is allowed for iteration"
         # Ensures int check if its a core int, np.int32, np.int64, or signed/unsigned variants
-        if iteration_arg is not None and not np.issubdtype(type(iteration_arg), np.integer):
+        if iteration_arg is not None and not np.issubdtype(
+            type(iteration_arg), np.integer
+        ):
             raise ValueError(err_message)
 
     @staticmethod
@@ -1454,7 +1664,7 @@ class MultiStateReporter(object):
         inside one or more groups.
 
         """
-        path_split = path.split('/')
+        path_split = path.split("/")
         nc_group = self._storage_dict[storage]
         for group_name in path_split[:-1]:
             nc_group = nc_group.groups[group_name]
@@ -1468,10 +1678,10 @@ class MultiStateReporter(object):
     def _calculate_checkpoint_iteration(self, iteration):
         """Compute the iteration on disk of the checkpoint file matching the iteration linked on the analysis iteration.
 
-         Although this is a simple function, it provides a common function for calculation
+        Although this is a simple function, it provides a common function for calculation
 
-         Returns either the integer index, or None if there is no matched index
-         """
+        Returns either the integer index, or None if there is no matched index
+        """
         checkpoint_index, remainder = divmod(iteration, self._checkpoint_interval)
         if remainder == 0:
             # NetCDF variables can't be assigned using numpy integers.
@@ -1530,12 +1740,18 @@ class MultiStateReporter(object):
             dimension = storage.dimensions[dim_name]
             if dim_size == 0:
                 if not dimension.isunlimited():
-                    raise ValueError("NetCDF dimension {} already exists: was previously unlimited, but tried to "
-                                     "redeclare it with size {}".format(dimension.name, dim_size))
+                    raise ValueError(
+                        "NetCDF dimension {} already exists: was previously unlimited, but tried to "
+                        "redeclare it with size {}".format(dimension.name, dim_size)
+                    )
             else:
                 if not int(dimension.size) == int(dim_size):
-                    raise ValueError("NetCDF dimension {} already exists: was previously size {}, but tried to "
-                                     "redeclare it with dimension {}".format(dimension.name, dimension.size, dim_size))
+                    raise ValueError(
+                        "NetCDF dimension {} already exists: was previously size {}, but tried to "
+                        "redeclare it with dimension {}".format(
+                            dimension.name, dimension.size, dim_size
+                        )
+                    )
 
     def _ensure_group_exists_and_get(self, group_name, storage=None):
         """
@@ -1558,7 +1774,9 @@ class MultiStateReporter(object):
         return storage.groups[group_name]
 
     @staticmethod
-    def _initialize_sampler_variables_on_file(dataset, n_atoms, n_replicas, is_periodic):
+    def _initialize_sampler_variables_on_file(
+        dataset, n_atoms, n_replicas, is_periodic
+    ):
         """
         Initialize the NetCDF variables on the storage file needed to store sampler states.
         Does nothing if file already initialized
@@ -1574,49 +1792,79 @@ class MultiStateReporter(object):
         is_periodic : bool
             True if system is periodic; False otherwise.
         """
-        if 'positions' not in dataset.variables:
+        if "positions" not in dataset.variables:
 
             # Create dimensions. Replica dimension could have been created before.
-            dataset.createDimension('atom', n_atoms)
-            if 'replica' not in dataset.dimensions:
-                dataset.createDimension('replica', n_replicas)
+            dataset.createDimension("atom", n_atoms)
+            if "replica" not in dataset.dimensions:
+                dataset.createDimension("replica", n_replicas)
 
             # Define position variables.
-            ncvar_positions = dataset.createVariable('positions', 'f4',
-                                                     ('iteration', 'replica', 'atom', 'spatial'),
-                                                     zlib=True, chunksizes=(1, n_replicas, n_atoms, 3))
-            ncvar_positions.units = 'nm'
-            ncvar_positions.long_name = ("positions[iteration][replica][atom][spatial] is position of "
-                                         "coordinate 'spatial' of atom 'atom' from replica 'replica' for "
-                                         "iteration 'iteration'.")
+            ncvar_positions = dataset.createVariable(
+                "positions",
+                "f4",
+                ("iteration", "replica", "atom", "spatial"),
+                zlib=True,
+                chunksizes=(1, n_replicas, n_atoms, 3),
+            )
+            ncvar_positions.units = "nm"
+            ncvar_positions.long_name = (
+                "positions[iteration][replica][atom][spatial] is position of "
+                "coordinate 'spatial' of atom 'atom' from replica 'replica' for "
+                "iteration 'iteration'."
+            )
 
             # Define velocities variables.
-            ncvar_velocities = dataset.createVariable('velocities', 'f4',
-                                                     ('iteration', 'replica', 'atom', 'spatial'),
-                                                     zlib=True, chunksizes=(1, n_replicas, n_atoms, 3))
-            ncvar_velocities.units = 'nm / ps'
-            ncvar_velocities.long_name = ("velocities[iteration][replica][atom][spatial] is velocity of "
-                                         "coordinate 'spatial' of atom 'atom' from replica 'replica' for "
-                                         "iteration 'iteration'.")
+            ncvar_velocities = dataset.createVariable(
+                "velocities",
+                "f4",
+                ("iteration", "replica", "atom", "spatial"),
+                zlib=True,
+                chunksizes=(1, n_replicas, n_atoms, 3),
+            )
+            ncvar_velocities.units = "nm / ps"
+            ncvar_velocities.long_name = (
+                "velocities[iteration][replica][atom][spatial] is velocity of "
+                "coordinate 'spatial' of atom 'atom' from replica 'replica' for "
+                "iteration 'iteration'."
+            )
 
             # Define variables for periodic systems
             if is_periodic:
-                ncvar_box_vectors = dataset.createVariable('box_vectors', 'f4',
-                                                           ('iteration', 'replica', 'spatial', 'spatial'),
-                                                           zlib=False, chunksizes=(1, n_replicas, 3, 3))
-                ncvar_volumes = dataset.createVariable('volumes', 'f8', ('iteration', 'replica'),
-                                                       zlib=False, chunksizes=(1, n_replicas))
+                ncvar_box_vectors = dataset.createVariable(
+                    "box_vectors",
+                    "f4",
+                    ("iteration", "replica", "spatial", "spatial"),
+                    zlib=False,
+                    chunksizes=(1, n_replicas, 3, 3),
+                )
+                ncvar_volumes = dataset.createVariable(
+                    "volumes",
+                    "f8",
+                    ("iteration", "replica"),
+                    zlib=False,
+                    chunksizes=(1, n_replicas),
+                )
 
-                ncvar_box_vectors.units = 'nm'
-                ncvar_volumes.units = 'nm**3'
-                ncvar_box_vectors.long_name = ("box_vectors[iteration][replica][i][j] is dimension j of box "
-                                               "vector i for replica 'replica' from iteration "
-                                               "'iteration-1'.")
-                ncvar_volumes.long_name = ("volume[iteration][replica] is the box volume for replica "
-                                           "'replica' from iteration 'iteration-1'.")
+                ncvar_box_vectors.units = "nm"
+                ncvar_volumes.units = "nm**3"
+                ncvar_box_vectors.long_name = (
+                    "box_vectors[iteration][replica][i][j] is dimension j of box "
+                    "vector i for replica 'replica' from iteration "
+                    "'iteration-1'."
+                )
+                ncvar_volumes.long_name = (
+                    "volume[iteration][replica] is the box volume for replica "
+                    "'replica' from iteration 'iteration-1'."
+                )
 
-    def _write_sampler_states_to_given_file(self, sampler_states: list, iteration: int,
-                                            storage_file='checkpoint', obey_checkpoint_interval=True):
+    def _write_sampler_states_to_given_file(
+        self,
+        sampler_states: list,
+        iteration: int,
+        storage_file="checkpoint",
+        obey_checkpoint_interval=True,
+    ):
         """
         Internal function to handle writing sampler states more generically to target file
 
@@ -1639,8 +1887,9 @@ class MultiStateReporter(object):
         is_periodic = True if (sampler_states[0].box_vectors is not None) else False
         n_particles = sampler_states[0].n_particles
         n_replicas = len(sampler_states)
-        self._initialize_sampler_variables_on_file(storage, n_particles,
-                                                   n_replicas, is_periodic)
+        self._initialize_sampler_variables_on_file(
+            storage, n_particles, n_replicas, is_periodic
+        )
         if obey_checkpoint_interval:
             write_iteration = self._calculate_checkpoint_iteration(iteration)
         else:
@@ -1656,7 +1905,7 @@ class MultiStateReporter(object):
                 positions[replica_index, :, :] = x[:, :]
             # Store positions
             try:
-                storage.variables['positions'][write_iteration, :, :, :] = positions
+                storage.variables["positions"][write_iteration, :, :, :] = positions
             except RuntimeError as e:
                 logging.warning(e)
 
@@ -1665,16 +1914,21 @@ class MultiStateReporter(object):
             for replica_index, sampler_state in enumerate(sampler_states):
                 if sampler_state._unitless_velocities is not None:
                     # Store velocities in memory first
-                    x = sampler_state.velocities / (unit.nanometer/unit.picoseconds) # _unitless_velocities
+                    x = sampler_state.velocities / (
+                        unit.nanometer / unit.picoseconds
+                    )  # _unitless_velocities
                     velocities[replica_index, :, :] = x[:, :]
-             # Store velocites
+            # Store velocites
             # TODO: This stores velocities as zeros if no velocities are present in the sampler state. Making restored
             #  sampler_state different from origin.
-            if 'velocities' not in storage.variables:
+            if "velocities" not in storage.variables:
                 # create variable with expected dimensions and shape
-                storage.createVariable('velocities', storage.variables['positions'].dtype,
-                                       dimensions=storage.variables['positions'].dimensions)
-            storage.variables['velocities'][write_iteration, :, :, :] = velocities
+                storage.createVariable(
+                    "velocities",
+                    storage.variables["positions"].dtype,
+                    dimensions=storage.variables["positions"].dimensions,
+                )
+            storage.variables["velocities"][write_iteration, :, :, :] = velocities
 
             if is_periodic:
                 # Store box vectors and volume.
@@ -1682,16 +1936,24 @@ class MultiStateReporter(object):
                 box_vectors = np.zeros([n_replicas, 3, 3])
                 volumes = np.zeros([n_replicas])
                 for replica_index, sampler_state in enumerate(sampler_states):
-                    box_vectors[replica_index, :, :] = sampler_state.box_vectors / unit.nanometers
-                    volumes[replica_index] = sampler_state.volume / unit.nanometers ** 3
-                storage.variables['box_vectors'][write_iteration, :, :, :] = box_vectors
-                storage.variables['volumes'][write_iteration, :] = volumes
+                    box_vectors[replica_index, :, :] = (
+                        sampler_state.box_vectors / unit.nanometers
+                    )
+                    volumes[replica_index] = sampler_state.volume / unit.nanometers**3
+                storage.variables["box_vectors"][write_iteration, :, :, :] = box_vectors
+                storage.variables["volumes"][write_iteration, :] = volumes
 
         else:
-            logger.debug("Iteration {} not on the Checkpoint Interval of {}. "
-                         "Sampler State not written.".format(iteration, self._checkpoint_interval))
+            logger.debug(
+                "Iteration {} not on the Checkpoint Interval of {}. "
+                "Sampler State not written.".format(
+                    iteration, self._checkpoint_interval
+                )
+            )
 
-    def _read_sampler_states_from_given_file(self, iteration, storage_file='checkpoint', obey_checkpoint_interval=True):
+    def _read_sampler_states_from_given_file(
+        self, iteration, storage_file="checkpoint", obey_checkpoint_interval=True
+    ):
         """
         Internal function to handle reading sampler states more from a general storage file
 
@@ -1723,39 +1985,52 @@ class MultiStateReporter(object):
             read_iteration = self._calculate_checkpoint_iteration(iteration)
         if read_iteration is not None:
             # TODO: Restore n_replicas instead
-            n_replicas = storage.dimensions['replica'].size
+            n_replicas = storage.dimensions["replica"].size
 
             sampler_states = list()
             for replica_index in range(n_replicas):
                 # Restore positions.
-                x = storage.variables['positions'][read_iteration, replica_index, :, :].astype(np.float64)
+                x = storage.variables["positions"][
+                    read_iteration, replica_index, :, :
+                ].astype(np.float64)
                 positions = unit.Quantity(x, unit.nanometers)
 
                 # Restore velocities
                 # try-catch exception, enabling reading legacy/older serialized objects from openmmtools<0.21.3
                 try:
-                    x = storage.variables['velocities'][read_iteration, replica_index, :, :].astype(np.float64)
+                    x = storage.variables["velocities"][
+                        read_iteration, replica_index, :, :
+                    ].astype(np.float64)
                     velocities = unit.Quantity(x, unit.nanometer / unit.picoseconds)
                 except KeyError:  # Velocities key/variable not found in serialization (openmmtools<=0.21.2)
                     # pass zeros as velocities when key is not found (<0.21.3 behavior)
                     velocities = np.zeros_like(positions)
 
-                if 'box_vectors' in storage.variables:
+                if "box_vectors" in storage.variables:
                     # Restore box vectors.
-                    x = storage.variables['box_vectors'][read_iteration, replica_index, :, :].astype(np.float64)
+                    x = storage.variables["box_vectors"][
+                        read_iteration, replica_index, :, :
+                    ].astype(np.float64)
                     box_vectors = unit.Quantity(x, unit.nanometers)
                 else:
                     box_vectors = None
 
                 # Create SamplerState.
-                sampler_states.append(states.SamplerState(positions=positions, velocities=velocities, box_vectors=box_vectors))
+                sampler_states.append(
+                    states.SamplerState(
+                        positions=positions,
+                        velocities=velocities,
+                        box_vectors=box_vectors,
+                    )
+                )
 
             return sampler_states
         else:
             return None
 
-    def _write_dict(self, path, data, storage_name='analysis',
-                    fixed_dimension=False, nested=False):
+    def _write_dict(
+        self, path, data, storage_name="analysis", fixed_dimension=False, nested=False
+    ):
         """Store the contents of a dict.
 
         Parameters
@@ -1791,9 +2066,12 @@ class MultiStateReporter(object):
         if nested and isinstance(data, dict) and len(data) > 0:
             for key, value in data.items():
                 if not isinstance(key, str):
-                    raise ValueError('Cannot store dict in nested form with non-string keys.')
-                self._write_dict(path + '/' + key, value, storage_name,
-                                 fixed_dimension, nested)
+                    raise ValueError(
+                        "Cannot store dict in nested form with non-string keys."
+                    )
+                self._write_dict(
+                    path + "/" + key, value, storage_name, fixed_dimension, nested
+                )
             return
 
         # Activate flow style to save space.
@@ -1804,50 +2082,54 @@ class MultiStateReporter(object):
             nc_variable = self._resolve_nc_path(path, storage_name)
         except KeyError:
             if fixed_dimension:
-                variable_type = 'S1'
+                variable_type = "S1"
                 dimension_name = "fixedL{}".format(len(data_str))
                 # Create a new fixed dimension if necessary.
                 if dimension_name not in storage_nc.dimensions:
                     storage_nc.createDimension(dimension_name, len(data_str))
             else:
                 variable_type = str
-                dimension_name = 'scalar'
+                dimension_name = "scalar"
             # Create variable.
-            nc_variable = storage_nc.createVariable(path, variable_type,
-                                                    dimension_name, zlib=True)
+            nc_variable = storage_nc.createVariable(
+                path, variable_type, dimension_name, zlib=True
+            )
 
         # Assign the value to the variable.
         if fixed_dimension:
-            packed_data = np.array(list(data_str), dtype='S1')
+            packed_data = np.array(list(data_str), dtype="S1")
         else:
-            packed_data = np.empty(1, 'O')
+            packed_data = np.empty(1, "O")
             packed_data[0] = data_str
         nc_variable[:] = packed_data
+
 
 # ==============================================================================
 # MODULE INTERNAL USAGE UTILITIES
 # ==============================================================================
 
+
 class _DictYamlLoader(yaml.CLoader):
     """PyYAML Loader that reads !Quantity tags."""
+
     def __init__(self, *args, **kwargs):
         super(_DictYamlLoader, self).__init__(*args, **kwargs)
-        self.add_constructor(u'!Quantity', self.quantity_constructor)
-        self.add_constructor(u'!ndarray', self.ndarray_constructor)
+        self.add_constructor("!Quantity", self.quantity_constructor)
+        self.add_constructor("!ndarray", self.ndarray_constructor)
 
     @staticmethod
     def quantity_constructor(loader, node):
         loaded_mapping = loader.construct_mapping(node)
-        data_unit = quantity_from_string(loaded_mapping['unit'])
-        data_value = loaded_mapping['value']
+        data_unit = quantity_from_string(loaded_mapping["unit"])
+        data_value = loaded_mapping["value"]
         return data_value * data_unit
 
     @staticmethod
     def ndarray_constructor(loader, node):
         loaded_mapping = loader.construct_mapping(node, deep=True)
-        data_type = np.dtype(loaded_mapping['type'])
-        data_shape = loaded_mapping['shape']
-        data_values = loaded_mapping['values']
+        data_type = np.dtype(loaded_mapping["type"])
+        data_shape = loaded_mapping["shape"]
+        data_values = loaded_mapping["values"]
         data = np.ndarray(shape=data_shape, dtype=data_type)
         if 0 not in data_shape:
             data[:] = data_values
@@ -1867,7 +2149,7 @@ class _DictYamlDumper(yaml.CDumper):
         data_unit = data.unit
         data_value = data / data_unit
         data_dump = dict(unit=str(data_unit), value=data_value)
-        return dumper.represent_mapping(u'!Quantity', data_dump)
+        return dumper.represent_mapping("!Quantity", data_dump)
 
     @staticmethod
     def ndarray_representer(dumper, data):
@@ -1876,4 +2158,4 @@ class _DictYamlDumper(yaml.CDumper):
         data_shape = data.shape
         data_values = data.tolist()
         data_dump = dict(type=data_type, shape=data_shape, values=data_values)
-        return dumper.represent_mapping(u'!ndarray', data_dump)
+        return dumper.represent_mapping("!ndarray", data_dump)

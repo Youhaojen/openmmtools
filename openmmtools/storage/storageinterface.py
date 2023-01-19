@@ -18,7 +18,7 @@ import abc
 
 from .iodrivers import NetCDFIODriver
 
-ABC = abc.ABCMeta('ABC', (object,), {})  # compatible with Python 2 *and* 3
+ABC = abc.ABCMeta("ABC", (object,), {})  # compatible with Python 2 *and* 3
 
 # =============================================================================
 # GENERIC SAVABLE DATA
@@ -121,7 +121,9 @@ class StorageInterfaceDirVar(object):
             try:
                 self._variable = self._storage_driver.get_storage_variable(path)
             except KeyError:  # Trap the "not present" case, AttributeErrors are larger problems
-                self._variable = self._storage_driver.create_storage_variable(path, type(data))
+                self._variable = self._storage_driver.create_storage_variable(
+                    path, type(data)
+                )
             self._directory = False
             dump_metadata = True
         # Protect variable if already written
@@ -161,7 +163,9 @@ class StorageInterfaceDirVar(object):
             try:
                 self._variable = self._storage_driver.get_storage_variable(path)
             except KeyError:  # Trap the "not present" case, AttributeErrors are larger problems
-                self._variable = self._storage_driver.create_storage_variable(path, type(data))
+                self._variable = self._storage_driver.create_storage_variable(
+                    path, type(data)
+                )
             self._directory = False
             self._dump_metadata_buffer()
         self._variable.append(data)
@@ -221,6 +225,7 @@ class StorageInterfaceDirVar(object):
     Used for functionality checks that will likely never be called by the user, but exposed to show
     what names can NOT be used in the dynamic directory/variable namespace a user will generate.
     """
+
     @property
     def variable(self):
         """
@@ -269,7 +274,9 @@ class StorageInterfaceDirVar(object):
         """
         # Cascade the path
         if self.predecessor is not None:
-            path = self.predecessor.path + ('/' + self.name)  # the parenthesis just makes it a little faster
+            path = self.predecessor.path + (
+                "/" + self.name
+            )  # the parenthesis just makes it a little faster
         else:
             path = self.name
         return path
@@ -337,7 +344,11 @@ class StorageInterfaceDirVar(object):
         """Check that the file exists before trying to read"""
         file_name = self._storage_interface.file_name
         if not os.path.isfile(file_name):
-            raise NameError("No such file exists at {}! Cannot read from non-existent file!".format(file_name))
+            raise NameError(
+                "No such file exists at {}! Cannot read from non-existent file!".format(
+                    file_name
+                )
+            )
 
     def _bind_to_variable_with_read(self):
         """Check that we are not a directory and all predecessors can read as well"""
@@ -361,19 +372,28 @@ class StorageInterfaceDirVar(object):
         if not create_if_missing:
             self._check_read_file()
         if self._directory is None or self._directory is True:
-            self._directory = self._storage_driver.get_directory(self.path, create=create_if_missing)
+            self._directory = self._storage_driver.get_directory(
+                self.path, create=create_if_missing
+            )
         if create_if_missing:
             self._dump_metadata_buffer()
 
     def __getattr__(self, name):
         """This method is only called if __getattribute__ fails, meaning that the attribute is not already defined"""
         if self._variable:
-            raise AttributeError("Cannot convert this object to a directory as its already bound to a variable!")
+            raise AttributeError(
+                "Cannot convert this object to a directory as its already bound to a variable!"
+            )
         if not self._directory:
             # Assign directory features
             self._directory = True
-        setattr(self, name, StorageInterfaceDirVar(name, self._storage_interface, predecessor=self))
+        setattr(
+            self,
+            name,
+            StorageInterfaceDirVar(name, self._storage_interface, predecessor=self),
+        )
         return getattr(self, name)
+
 
 # =============================================================================
 # STORAGE INTERFACE
@@ -418,6 +438,7 @@ class StorageInterface(object):
     ...     mydata = i**2
     ...     my_storage.looper.append(mydata)
     """
+
     def __init__(self, storage_driver):
         """
         Initialize the class by reading in the StorageIODriver in storage_driver. The file name is inferred from the

@@ -115,6 +115,7 @@ import copy
 import logging
 
 import numpy as np
+
 try:
     import openmm
     from openmm import unit
@@ -138,6 +139,7 @@ _RANDOM_SEED_MAX = np.iinfo(np.int32).max  # maximum random number seed value
 # MARKOV CHAIN MOVE ABSTRACTION
 # =============================================================================
 
+
 class MCMCMove(SubhookedABCMeta):
     """Markov chain Monte Carlo (MCMC) move abstraction.
 
@@ -146,10 +148,13 @@ class MCMCMove(SubhookedABCMeta):
     statistics such as number of attempted moves and acceptance rates.
 
     """
+
     def __init__(self, context_cache=None):
         if context_cache is not None:
-            logger.warning("Ignoring context_cache argument. The MCMCMove.context_cache field has been deprecated."
-                           " The API now requires context_cache be passed to apply(). Please update your code.'")
+            logger.warning(
+                "Ignoring context_cache argument. The MCMCMove.context_cache field has been deprecated."
+                " The API now requires context_cache be passed to apply(). Please update your code.'"
+            )
 
     @abc.abstractmethod
     def apply(self, thermodynamic_state, sampler_state, context_cache=None):
@@ -174,9 +179,12 @@ class MCMCMove(SubhookedABCMeta):
 
     @property
     def context_cache(self):
-        logger.warning('The MCMCMove.context_cache field has been deprecated. The API now requires context_cache '
-                       'be passed to apply(). Please update your code.')
+        logger.warning(
+            "The MCMCMove.context_cache field has been deprecated. The API now requires context_cache "
+            "be passed to apply(). Please update your code."
+        )
         from openmmtools import cache
+
         return cache.global_context_cache
 
     @staticmethod
@@ -203,13 +211,16 @@ class MCMCMove(SubhookedABCMeta):
         elif isinstance(context_cache_input, cache.ContextCache):
             context_cache = context_cache_input
         else:
-            raise ValueError("Context cache input is not a valid ContextCache or None type.")
+            raise ValueError(
+                "Context cache input is not a valid ContextCache or None type."
+            )
         return context_cache
 
 
 # =============================================================================
 # MARKOV CHAIN MONTE CARLO SAMPLER
 # =============================================================================
+
 
 class MCMCSampler(object):
     """Basic Markov chain Monte Carlo sampler.
@@ -298,10 +309,18 @@ class MCMCSampler(object):
             context_cache = cache.global_context_cache
         # Apply move for n_iterations.
         for iteration in range(n_iterations):
-            self.move.apply(self.thermodynamic_state, self.sampler_state, context_cache=context_cache)
+            self.move.apply(
+                self.thermodynamic_state,
+                self.sampler_state,
+                context_cache=context_cache,
+            )
 
-    def minimize(self, tolerance=1.0*unit.kilocalories_per_mole/unit.angstroms,
-                 max_iterations=100, context_cache=None):
+    def minimize(
+        self,
+        tolerance=1.0 * unit.kilocalories_per_mole / unit.angstroms,
+        max_iterations=100,
+        context_cache=None,
+    ):
         """Minimize the current configuration.
 
         Parameters
@@ -324,11 +343,18 @@ class MCMCSampler(object):
 
         # Use LocalEnergyMinimizer
         timer.start("Context request")
-        integrator = openmm.VerletIntegrator(1.0*unit.femtosecond)
-        context, integrator = context_cache.get_context(self.thermodynamic_state, integrator)
+        integrator = openmm.VerletIntegrator(1.0 * unit.femtosecond)
+        context, integrator = context_cache.get_context(
+            self.thermodynamic_state, integrator
+        )
         self.sampler_state.apply_to_context(context)
-        logger.debug("LocalEnergyMinimizer: platform is %s" % context.getPlatform().getName())
-        logger.debug("Minimizing with tolerance %s and %d max. iterations." % (tolerance, max_iterations))
+        logger.debug(
+            "LocalEnergyMinimizer: platform is %s" % context.getPlatform().getName()
+        )
+        logger.debug(
+            "Minimizing with tolerance %s and %d max. iterations."
+            % (tolerance, max_iterations)
+        )
         timer.stop("Context request")
 
         timer.start("LocalEnergyMinimizer minimize")
@@ -338,12 +364,13 @@ class MCMCSampler(object):
         # Retrieve data.
         self.sampler_state.update_from_context(context)
 
-        #timer.report_timing()
+        # timer.report_timing()
 
 
 # =============================================================================
 # MCMC MOVE CONTAINERS
 # =============================================================================
+
 
 class SequenceMove(MCMCMove):
     """A sequence of MCMC moves.
@@ -380,6 +407,7 @@ class SequenceMove(MCMCMove):
     False
 
     """
+
     def __init__(self, move_list, **kwargs):
         super(SequenceMove, self).__init__(**kwargs)
         self.move_list = list(move_list)
@@ -398,7 +426,7 @@ class SequenceMove(MCMCMove):
     @statistics.setter
     def statistics(self, value):
         for i, move in enumerate(self.move_list):
-            if hasattr(move, 'statistics'):
+            if hasattr(move, "statistics"):
                 move.statistics = value[i]
 
     def apply(self, thermodynamic_state, sampler_state, context_cache=None):
@@ -417,7 +445,9 @@ class SequenceMove(MCMCMove):
         local_context_cache = self._get_context_cache(context_cache)
         for move in self.move_list:
             # Apply each move with the specified local context
-            move.apply(thermodynamic_state, sampler_state, context_cache=local_context_cache)
+            move.apply(
+                thermodynamic_state, sampler_state, context_cache=local_context_cache
+            )
 
     def __str__(self):
         return str(self.move_list)
@@ -430,7 +460,7 @@ class SequenceMove(MCMCMove):
         return dict(move_list=serialized_moves)
 
     def __setstate__(self, serialization):
-        serialized_moves = serialization['move_list']
+        serialized_moves = serialization["move_list"]
         self.move_list = [utils.deserialize(move) for move in serialized_moves]
 
 
@@ -469,6 +499,7 @@ class WeightedMove(MCMCMove):
     False
 
     """
+
     def __init__(self, move_set, **kwargs):
         super(WeightedMove, self).__init__(**kwargs)
         self.move_set = move_set
@@ -487,7 +518,7 @@ class WeightedMove(MCMCMove):
     @statistics.setter
     def statistics(self, value):
         for i, (move, weight) in enumerate(self.move_set):
-            if hasattr(move, 'statistics'):
+            if hasattr(move, "statistics"):
                 move.statistics = value[i]
 
     def apply(self, thermodynamic_state, sampler_state, context_cache=None):
@@ -509,7 +540,9 @@ class WeightedMove(MCMCMove):
         move = np.random.choice(moves, p=weights)
         # Get context cache to be used
         local_context_cache = self._get_context_cache(context_cache)
-        move.apply(thermodynamic_state, sampler_state, context_cache=local_context_cache)
+        move.apply(
+            thermodynamic_state, sampler_state, context_cache=local_context_cache
+        )
 
     def __getstate__(self):
         serialized_moves = [utils.serialize(move) for move, _ in self.move_set]
@@ -517,10 +550,12 @@ class WeightedMove(MCMCMove):
         return dict(moves=serialized_moves, weights=weights)
 
     def __setstate__(self, serialization):
-        serialized_moves = serialization['moves']
-        weights = serialization['weights']
-        self.move_set = [(utils.deserialize(move), weight)
-                         for move, weight in zip(serialized_moves, weights)]
+        serialized_moves = serialization["moves"]
+        weights = serialization["weights"]
+        self.move_set = [
+            (utils.deserialize(move), weight)
+            for move, weight in zip(serialized_moves, weights)
+        ]
 
     def __str__(self):
         return str(self.move_set)
@@ -532,6 +567,7 @@ class WeightedMove(MCMCMove):
 # =============================================================================
 # INTEGRATOR MCMC MOVE BASE CLASS
 # =============================================================================
+
 
 class IntegratorMoveError(Exception):
     """An error raised when NaN is found after applying a move.
@@ -546,6 +582,7 @@ class IntegratorMoveError(Exception):
         The context after the integration.
 
     """
+
     def __init__(self, message, move, context=None):
         super(IntegratorMoveError, self).__init__(message)
         self.move = move
@@ -584,17 +621,27 @@ class IntegratorMoveError(Exception):
                 if type(o) in [unit.quantity.Quantity, unit.unit.Unit]:
                     return str(o)
                 super(quantity_encoder, self).default(o)
+
         serialized_move = utils.serialize(self.move)
-        with open(os.path.join(path_files_prefix + '-move.json'), 'w') as f:
+        with open(os.path.join(path_files_prefix + "-move.json"), "w") as f:
             json.dump(serialized_move, f, cls=quantity_encoder)
 
         # Serialize Context.
-        openmm_state = self.context.getState(getPositions=True, getVelocities=True,
-                                             getEnergy=True, getForces=True, getParameters=True)
-        to_serialize = [self.context.getSystem(), self.context.getIntegrator(), openmm_state]
-        for name, openmm_object in zip(['system', 'integrator', 'state'], to_serialize):
+        openmm_state = self.context.getState(
+            getPositions=True,
+            getVelocities=True,
+            getEnergy=True,
+            getForces=True,
+            getParameters=True,
+        )
+        to_serialize = [
+            self.context.getSystem(),
+            self.context.getIntegrator(),
+            openmm_state,
+        ]
+        for name, openmm_object in zip(["system", "integrator", "state"], to_serialize):
             serialized_object = openmm.XmlSerializer.serialize(openmm_object)
-            with open(os.path.join(path_files_prefix + '-' + name + '.xml'), 'w') as f:
+            with open(os.path.join(path_files_prefix + "-" + name + ".xml"), "w") as f:
                 f.write(serialized_object)
 
 
@@ -657,7 +704,9 @@ class BaseIntegratorMove(MCMCMove):
 
     """
 
-    def __init__(self, n_steps, reassign_velocities=False, n_restart_attempts=4, **kwargs):
+    def __init__(
+        self, n_steps, reassign_velocities=False, n_restart_attempts=4, **kwargs
+    ):
         super(BaseIntegratorMove, self).__init__(**kwargs)
         self.n_steps = n_steps
         self.reassign_velocities = reassign_velocities
@@ -695,16 +744,22 @@ class BaseIntegratorMove(MCMCMove):
         # Create context.
         timer.start("{}: Context request".format(move_name))
         # TODO: Is this still needed now that we are specifying the context?
-        context, integrator = local_context_cache.get_context(thermodynamic_state, integrator)
+        context, integrator = local_context_cache.get_context(
+            thermodynamic_state, integrator
+        )
         timer.stop("{}: Context request".format(move_name))
         # inform of platform used in current context
-        logger.debug(f"{move_name}: Integrator using {context.getPlatform().getName()} platform.")
+        logger.debug(
+            f"{move_name}: Integrator using {context.getPlatform().getName()} platform."
+        )
 
         # Perform the integration.
         for attempt_counter in range(self.n_restart_attempts + 1):
 
             # If we reassign velocities, we can ignore the ones in sampler_state.
-            sampler_state.apply_to_context(context, ignore_velocities=self.reassign_velocities)
+            sampler_state.apply_to_context(
+                context, ignore_velocities=self.reassign_velocities
+            )
             if self.reassign_velocities:
                 context.setVelocitiesToTemperature(thermodynamic_state.temperature)
 
@@ -724,21 +779,32 @@ class BaseIntegratorMove(MCMCMove):
                 # We get also velocities here even if we don't need them because we
                 # will recycle this State to update the sampler state object. This
                 # way we won't need a second call to Context.getState().
-                context_state = context.getState(getPositions=True, getVelocities=True, getEnergy=True,
-                                                 enforcePeriodicBox=thermodynamic_state.is_periodic)
+                context_state = context.getState(
+                    getPositions=True,
+                    getVelocities=True,
+                    getEnergy=True,
+                    enforcePeriodicBox=thermodynamic_state.is_periodic,
+                )
 
                 # Check for NaNs in energies.
                 potential_energy = context_state.getPotentialEnergy()
-                restart = np.isnan(potential_energy.value_in_unit(potential_energy.unit))
+                restart = np.isnan(
+                    potential_energy.value_in_unit(potential_energy.unit)
+                )
 
             # Restart the move if we found NaNs.
             if restart:
-                err_msg = ('Potential energy is NaN after {} attempts of integration '
-                           'with move {}'.format(attempt_counter, self.__class__.__name__))
+                err_msg = (
+                    "Potential energy is NaN after {} attempts of integration "
+                    "with move {}".format(attempt_counter, self.__class__.__name__)
+                )
 
                 # If we are on our last chance before crash, try to re-initialize context
                 if attempt_counter == self.n_restart_attempts - 1:
-                    logger.error(err_msg + ' Trying to reinitialize Context as a last-resort restart attempt...')
+                    logger.error(
+                        err_msg
+                        + " Trying to reinitialize Context as a last-resort restart attempt..."
+                    )
                     context.reinitialize()
                     sampler_state.apply_to_context(context)
                     thermodynamic_state.apply_to_context(context)
@@ -749,7 +815,7 @@ class BaseIntegratorMove(MCMCMove):
                     logger.error(err_msg)
                     raise IntegratorMoveError(err_msg, self, context)
                 else:
-                    logger.warning(err_msg + ' Attempting a restart...')
+                    logger.warning(err_msg + " Attempting a restart...")
             else:
                 break
 
@@ -762,13 +828,19 @@ class BaseIntegratorMove(MCMCMove):
         # but are a part of the Context. We do this call twice to minimize duplicating information fetched from
         # the State.
         # Update everything but the collective variables from the State object
-        sampler_state.update_from_context(context_state, ignore_collective_variables=True)
+        sampler_state.update_from_context(
+            context_state, ignore_collective_variables=True
+        )
         # Update only the collective variables from the Context
-        sampler_state.update_from_context(context, ignore_positions=True, ignore_velocities=True,
-                                          ignore_collective_variables=False)
+        sampler_state.update_from_context(
+            context,
+            ignore_positions=True,
+            ignore_velocities=True,
+            ignore_collective_variables=False,
+        )
         timer.stop("{}: update sampler state".format(move_name))
 
-        #timer.report_timing()
+        # timer.report_timing()
 
     @abc.abstractmethod
     def _get_integrator(self, thermodynamic_state):
@@ -788,19 +860,22 @@ class BaseIntegratorMove(MCMCMove):
         pass
 
     def __getstate__(self):
-        return dict(n_steps=self.n_steps,
-                    reassign_velocities=self.reassign_velocities,
-                    n_restart_attempts=self.n_restart_attempts)
+        return dict(
+            n_steps=self.n_steps,
+            reassign_velocities=self.reassign_velocities,
+            n_restart_attempts=self.n_restart_attempts,
+        )
 
     def __setstate__(self, serialization):
-        self.n_steps = serialization['n_steps']
-        self.reassign_velocities = serialization['reassign_velocities']
-        self.n_restart_attempts = serialization['n_restart_attempts']
+        self.n_steps = serialization["n_steps"]
+        self.reassign_velocities = serialization["reassign_velocities"]
+        self.n_restart_attempts = serialization["n_restart_attempts"]
 
 
 # =============================================================================
 # METROPOLIZED MOVE BASE CLASS
 # =============================================================================
+
 
 class MetropolizedMove(MCMCMove):
     """A base class for metropolized moves.
@@ -848,6 +923,7 @@ class MetropolizedMove(MCMCMove):
     1
 
     """
+
     def __init__(self, atom_subset=None, **kwargs):
         super(MetropolizedMove, self).__init__(**kwargs)
         self.n_accepted = 0
@@ -861,8 +937,8 @@ class MetropolizedMove(MCMCMove):
 
     @statistics.setter
     def statistics(self, value):
-        self.n_accepted = value['n_accepted']
-        self.n_proposed = value['n_proposed']
+        self.n_accepted = value["n_accepted"]
+        self.n_proposed = value["n_proposed"]
 
     def apply(self, thermodynamic_state, sampler_state, context_cache=None):
         """Apply a metropolized move to the sampler state.
@@ -880,7 +956,7 @@ class MetropolizedMove(MCMCMove):
 
         """
         timer = Timer()
-        benchmark_id = 'Applying {}'.format(self.__class__.__name__ )
+        benchmark_id = "Applying {}".format(self.__class__.__name__)
         timer.start(benchmark_id)
 
         # Get context cache
@@ -888,7 +964,9 @@ class MetropolizedMove(MCMCMove):
 
         # TODO: Is this still needed now that we are specifying the context?
         # Create context, any integrator works.
-        context, unused_integrator = local_context_cache.get_context(thermodynamic_state)
+        context, unused_integrator = local_context_cache.get_context(
+            thermodynamic_state
+        )
 
         # Compute initial energy. We don't need to set velocities to compute the potential.
         # TODO assume sampler_state.potential_energy is the correct potential if not None?
@@ -900,7 +978,7 @@ class MetropolizedMove(MCMCMove):
             atom_subset = slice(None)
         elif not isinstance(self.atom_subset, slice) and len(self.atom_subset) == 1:
             # Slice so that initial_positions (below) will have a 2D shape.
-            atom_subset = slice(self.atom_subset[0], self.atom_subset[0]+1)
+            atom_subset = slice(self.atom_subset[0], self.atom_subset[0] + 1)
         else:
             atom_subset = self.atom_subset
 
@@ -923,8 +1001,9 @@ class MetropolizedMove(MCMCMove):
 
         # Accept or reject with Metropolis criteria.
         delta_energy = proposed_energy - initial_energy
-        if (not np.isnan(proposed_energy) and
-                (delta_energy <= 0.0 or np.random.rand() < np.exp(-delta_energy))):
+        if not np.isnan(proposed_energy) and (
+            delta_energy <= 0.0 or np.random.rand() < np.exp(-delta_energy)
+        ):
             self.n_accepted += 1
         else:
             # Restore original positions.
@@ -933,7 +1012,7 @@ class MetropolizedMove(MCMCMove):
 
         # Print timing information.
         timer.stop(benchmark_id)
-        #timer.report_timing()
+        # timer.report_timing()
 
     def __getstate__(self):
         serialization = dict(atom_subset=self.atom_subset)
@@ -941,7 +1020,7 @@ class MetropolizedMove(MCMCMove):
         return serialization
 
     def __setstate__(self, serialization):
-        self.atom_subset = serialization['atom_subset']
+        self.atom_subset = serialization["atom_subset"]
         self.statistics = serialization
 
     @abc.abstractmethod
@@ -969,6 +1048,7 @@ class MetropolizedMove(MCMCMove):
 # GENERIC INTEGRATOR MOVE
 # =============================================================================
 
+
 class IntegratorMove(BaseIntegratorMove):
     """An MCMCMove that propagate the system with an integrator.
 
@@ -988,6 +1068,7 @@ class IntegratorMove(BaseIntegratorMove):
     n_steps
 
     """
+
     def __init__(self, integrator, n_steps, **kwargs):
         super(IntegratorMove, self).__init__(n_steps=n_steps, **kwargs)
         self.integrator = integrator
@@ -1003,17 +1084,18 @@ class IntegratorMove(BaseIntegratorMove):
 
     def __getstate__(self):
         serialization = super(IntegratorMove, self).__getstate__()
-        serialization['integrator'] = openmm.XmlSerializer.serialize(self.integrator)
+        serialization["integrator"] = openmm.XmlSerializer.serialize(self.integrator)
         return serialization
 
     def __setstate__(self, serialization):
         super(IntegratorMove, self).__setstate__(serialization)
-        self.integrator = openmm.XmlSerializer.deserialize(serialization['integrator'])
+        self.integrator = openmm.XmlSerializer.deserialize(serialization["integrator"])
 
 
 # =============================================================================
 # LANGEVIN DYNAMICS MOVES
 # =============================================================================
+
 
 class LangevinDynamicsMove(BaseIntegratorMove):
     """Langevin dynamics segment as a (pseudo) Monte Carlo move.
@@ -1117,11 +1199,18 @@ class LangevinDynamicsMove(BaseIntegratorMove):
 
     """
 
-    def __init__(self, timestep=1.0*unit.femtosecond, collision_rate=10.0/unit.picoseconds,
-                 n_steps=1000, reassign_velocities=False, constraint_tolerance=1e-8, **kwargs):
-        super(LangevinDynamicsMove, self).__init__(n_steps=n_steps,
-                                                   reassign_velocities=reassign_velocities,
-                                                   **kwargs)
+    def __init__(
+        self,
+        timestep=1.0 * unit.femtosecond,
+        collision_rate=10.0 / unit.picoseconds,
+        n_steps=1000,
+        reassign_velocities=False,
+        constraint_tolerance=1e-8,
+        **kwargs,
+    ):
+        super(LangevinDynamicsMove, self).__init__(
+            n_steps=n_steps, reassign_velocities=reassign_velocities, **kwargs
+        )
         self.timestep = timestep
         self.collision_rate = collision_rate
         self.constraint_tolerance = constraint_tolerance
@@ -1143,26 +1232,28 @@ class LangevinDynamicsMove(BaseIntegratorMove):
 
         """
         # Explicitly implemented just to have more specific docstring.
-        super(LangevinDynamicsMove, self).apply(thermodynamic_state, sampler_state,
-                                                context_cache=context_cache)
+        super(LangevinDynamicsMove, self).apply(
+            thermodynamic_state, sampler_state, context_cache=context_cache
+        )
 
     def __getstate__(self):
         serialization = super(LangevinDynamicsMove, self).__getstate__()
-        serialization['timestep'] = self.timestep
-        serialization['collision_rate'] = self.collision_rate
-        serialization['constraint_tolerance'] = self.constraint_tolerance
+        serialization["timestep"] = self.timestep
+        serialization["collision_rate"] = self.collision_rate
+        serialization["constraint_tolerance"] = self.constraint_tolerance
         return serialization
 
     def __setstate__(self, serialization):
         super(LangevinDynamicsMove, self).__setstate__(serialization)
-        self.timestep = serialization['timestep']
-        self.collision_rate = serialization['collision_rate']
-        self.constraint_tolerance = serialization['constraint_tolerance']
+        self.timestep = serialization["timestep"]
+        self.collision_rate = serialization["collision_rate"]
+        self.constraint_tolerance = serialization["constraint_tolerance"]
 
     def _get_integrator(self, thermodynamic_state):
         """Implement BaseIntegratorMove._get_integrator()."""
-        integrator = openmm.LangevinMiddleIntegrator(thermodynamic_state.temperature,
-                                                     self.collision_rate, self.timestep)
+        integrator = openmm.LangevinMiddleIntegrator(
+            thermodynamic_state.temperature, self.collision_rate, self.timestep
+        )
         integrator.setConstraintTolerance(self.constraint_tolerance)
         return integrator
 
@@ -1272,14 +1363,25 @@ class LangevinSplittingDynamicsMove(LangevinDynamicsMove):
 
     """
 
-    def __init__(self, timestep=1.0 * unit.femtosecond, collision_rate=10.0 / unit.picoseconds,
-                 n_steps=1000, reassign_velocities=False, splitting="V R O R V", constraint_tolerance=1.0e-8,
-                 measure_shadow_work=False, measure_heat=False, **kwargs):
-        super(LangevinSplittingDynamicsMove, self).__init__(n_steps=n_steps,
-                                                            reassign_velocities=reassign_velocities,
-                                                            timestep=timestep,
-                                                            collision_rate=collision_rate,
-                                                            **kwargs)
+    def __init__(
+        self,
+        timestep=1.0 * unit.femtosecond,
+        collision_rate=10.0 / unit.picoseconds,
+        n_steps=1000,
+        reassign_velocities=False,
+        splitting="V R O R V",
+        constraint_tolerance=1.0e-8,
+        measure_shadow_work=False,
+        measure_heat=False,
+        **kwargs,
+    ):
+        super(LangevinSplittingDynamicsMove, self).__init__(
+            n_steps=n_steps,
+            reassign_velocities=reassign_velocities,
+            timestep=timestep,
+            collision_rate=collision_rate,
+            **kwargs,
+        )
         self.splitting = splitting
         self.constraint_tolerance = constraint_tolerance
         self.measure_shadow_work = measure_shadow_work
@@ -1287,33 +1389,36 @@ class LangevinSplittingDynamicsMove(LangevinDynamicsMove):
 
     def __getstate__(self):
         serialization = super(LangevinSplittingDynamicsMove, self).__getstate__()
-        serialization['splitting'] = self.splitting
-        serialization['constraint_tolerance'] = self.constraint_tolerance
-        serialization['measure_shadow_work'] = self.measure_shadow_work
-        serialization['measure_heat'] = self.measure_heat
+        serialization["splitting"] = self.splitting
+        serialization["constraint_tolerance"] = self.constraint_tolerance
+        serialization["measure_shadow_work"] = self.measure_shadow_work
+        serialization["measure_heat"] = self.measure_heat
         return serialization
 
     def __setstate__(self, serialization):
         super(LangevinSplittingDynamicsMove, self).__setstate__(serialization)
-        self.splitting = serialization['splitting']
-        self.constraint_tolerance = serialization['constraint_tolerance']
-        self.measure_shadow_work = serialization['measure_shadow_work']
-        self.measure_heat = serialization['measure_heat']
+        self.splitting = serialization["splitting"]
+        self.constraint_tolerance = serialization["constraint_tolerance"]
+        self.measure_shadow_work = serialization["measure_shadow_work"]
+        self.measure_heat = serialization["measure_heat"]
 
     def _get_integrator(self, thermodynamic_state):
         """Implement BaseIntegratorMove._get_integrator()."""
-        return integrators.LangevinIntegrator(temperature=thermodynamic_state.temperature,
-                                              collision_rate=self.collision_rate,
-                                              timestep=self.timestep,
-                                              splitting=self.splitting,
-                                              constraint_tolerance=self.constraint_tolerance,
-                                              measure_shadow_work=self.measure_shadow_work,
-                                              measure_heat=self.measure_heat)
+        return integrators.LangevinIntegrator(
+            temperature=thermodynamic_state.temperature,
+            collision_rate=self.collision_rate,
+            timestep=self.timestep,
+            splitting=self.splitting,
+            constraint_tolerance=self.constraint_tolerance,
+            measure_shadow_work=self.measure_shadow_work,
+            measure_heat=self.measure_heat,
+        )
 
 
 # =============================================================================
 # GENERALIZED HYBRID MONTE CARLO MOVE
 # =============================================================================
+
 
 class GHMCMove(BaseIntegratorMove):
     """Generalized hybrid Monte Carlo (GHMC) Markov chain Monte Carlo move.
@@ -1394,8 +1499,13 @@ class GHMCMove(BaseIntegratorMove):
 
     """
 
-    def __init__(self, timestep=1.0*unit.femtosecond, collision_rate=20.0/unit.picoseconds,
-                 n_steps=1000, **kwargs):
+    def __init__(
+        self,
+        timestep=1.0 * unit.femtosecond,
+        collision_rate=20.0 / unit.picoseconds,
+        n_steps=1000,
+        **kwargs,
+    ):
         super(GHMCMove, self).__init__(n_steps=n_steps, **kwargs)
         self.timestep = timestep
         self.collision_rate = collision_rate
@@ -1421,8 +1531,8 @@ class GHMCMove(BaseIntegratorMove):
 
     @statistics.setter
     def statistics(self, value):
-        self.n_accepted = value['n_accepted']
-        self.n_proposed = value['n_proposed']
+        self.n_accepted = value["n_accepted"]
+        self.n_proposed = value["n_proposed"]
 
     def reset_statistics(self):
         """Reset the internal statistics of number of accepted and attempted moves."""
@@ -1446,37 +1556,43 @@ class GHMCMove(BaseIntegratorMove):
 
         """
         # Explicitly implemented just to have more specific docstring.
-        super(GHMCMove, self).apply(thermodynamic_state, sampler_state, context_cache=context_cache)
+        super(GHMCMove, self).apply(
+            thermodynamic_state, sampler_state, context_cache=context_cache
+        )
 
     def __getstate__(self):
         serialization = super(GHMCMove, self).__getstate__()
-        serialization['timestep'] = self.timestep
-        serialization['collision_rate'] = self.collision_rate
+        serialization["timestep"] = self.timestep
+        serialization["collision_rate"] = self.collision_rate
         serialization.update(self.statistics)
         return serialization
 
     def __setstate__(self, serialization):
         super(GHMCMove, self).__setstate__(serialization)
-        self.timestep = serialization['timestep']
-        self.collision_rate = serialization['collision_rate']
+        self.timestep = serialization["timestep"]
+        self.collision_rate = serialization["collision_rate"]
         self.statistics = serialization
 
     def _get_integrator(self, thermodynamic_state):
         """Implement BaseIntegratorMove._get_integrator()."""
         # Store lastly generated integrator to collect statistics.
-        return integrators.GHMCIntegrator(temperature=thermodynamic_state.temperature,
-                                          collision_rate=self.collision_rate,
-                                          timestep=self.timestep)
+        return integrators.GHMCIntegrator(
+            temperature=thermodynamic_state.temperature,
+            collision_rate=self.collision_rate,
+            timestep=self.timestep,
+        )
 
     def _after_integration(self, context, thermodynamic_state):
         """Implement BaseIntegratorMove._after_integration()."""
         integrator = context.getIntegrator()
 
         # Accumulate acceptance statistics.
-        ghmc_global_variables = {integrator.getGlobalVariableName(index): index
-                                 for index in range(integrator.getNumGlobalVariables())}
-        n_accepted = integrator.getGlobalVariable(ghmc_global_variables['naccept'])
-        n_proposed = integrator.getGlobalVariable(ghmc_global_variables['ntrials'])
+        ghmc_global_variables = {
+            integrator.getGlobalVariableName(index): index
+            for index in range(integrator.getNumGlobalVariables())
+        }
+        n_accepted = integrator.getGlobalVariable(ghmc_global_variables["naccept"])
+        n_proposed = integrator.getGlobalVariable(ghmc_global_variables["ntrials"])
         self.n_accepted += n_accepted
         self.n_proposed += n_proposed
 
@@ -1484,6 +1600,7 @@ class GHMCMove(BaseIntegratorMove):
 # =============================================================================
 # HYBRID MONTE CARLO MOVE
 # =============================================================================
+
 
 class HMCMove(BaseIntegratorMove):
     """Hybrid Monte Carlo dynamics.
@@ -1548,7 +1665,7 @@ class HMCMove(BaseIntegratorMove):
 
     """
 
-    def __init__(self, timestep=1.0*unit.femtosecond, n_steps=1000, **kwargs):
+    def __init__(self, timestep=1.0 * unit.femtosecond, n_steps=1000, **kwargs):
         super(HMCMove, self).__init__(n_steps=n_steps, **kwargs)
         self.timestep = timestep
 
@@ -1568,26 +1685,32 @@ class HMCMove(BaseIntegratorMove):
 
         """
         # Explicitly implemented just to have more specific docstring.
-        super(HMCMove, self).apply(thermodynamic_state, sampler_state, context_cache=context_cache)
+        super(HMCMove, self).apply(
+            thermodynamic_state, sampler_state, context_cache=context_cache
+        )
 
     def __getstate__(self):
         serialization = super(HMCMove, self).__getstate__()
-        serialization['timestep'] = self.timestep
+        serialization["timestep"] = self.timestep
         return serialization
 
     def __setstate__(self, serialization):
         super(HMCMove, self).__setstate__(serialization)
-        self.timestep = serialization['timestep']
+        self.timestep = serialization["timestep"]
 
     def _get_integrator(self, thermodynamic_state):
         """Implement BaseIntegratorMove._get_integrator()."""
-        return integrators.HMCIntegrator(temperature=thermodynamic_state.temperature,
-                                         timestep=self.timestep, nsteps=self.n_steps)
+        return integrators.HMCIntegrator(
+            temperature=thermodynamic_state.temperature,
+            timestep=self.timestep,
+            nsteps=self.n_steps,
+        )
 
 
 # =============================================================================
 # MONTE CARLO BAROSTAT MOVE
 # =============================================================================
+
 
 class MonteCarloBarostatMove(BaseIntegratorMove):
     """Monte Carlo barostat move.
@@ -1667,11 +1790,15 @@ class MonteCarloBarostatMove(BaseIntegratorMove):
         # Make sure system contains a MonteCarlo barostat.
         barostat = thermodynamic_state.barostat
         if barostat is None:
-            raise RuntimeError('Requested a MonteCarloBarostat move'
-                               ' on a system at constant pressure')
+            raise RuntimeError(
+                "Requested a MonteCarloBarostat move"
+                " on a system at constant pressure"
+            )
         if not isinstance(barostat, openmm.MonteCarloBarostat):
-            raise RuntimeError('Requested a MonteCarloBarostat move on a system '
-                               'barostated with a {}'.format(barostat.__class__.__name__))
+            raise RuntimeError(
+                "Requested a MonteCarloBarostat move on a system "
+                "barostated with a {}".format(barostat.__class__.__name__)
+            )
 
         # Set temporarily the frequency if needed.
         old_barostat_frequency = barostat.getFrequency()
@@ -1679,8 +1806,9 @@ class MonteCarloBarostatMove(BaseIntegratorMove):
             barostat.setFrequency(1)
         thermodynamic_state.barostat = barostat
 
-        super(MonteCarloBarostatMove, self).apply(thermodynamic_state, sampler_state,
-                                                  context_cache=context_cache)
+        super(MonteCarloBarostatMove, self).apply(
+            thermodynamic_state, sampler_state, context_cache=context_cache
+        )
 
         # Restore frequency of barostat.
         if old_barostat_frequency != 1:
@@ -1695,6 +1823,7 @@ class MonteCarloBarostatMove(BaseIntegratorMove):
 # =============================================================================
 # RANDOM DISPLACEMENT MOVE
 # =============================================================================
+
 
 class MCDisplacementMove(MetropolizedMove):
     """A metropolized move that randomly displace a subset of atoms.
@@ -1723,12 +1852,12 @@ class MCDisplacementMove(MetropolizedMove):
 
     """
 
-    def __init__(self, displacement_sigma=1.0*unit.nanometer, **kwargs):
+    def __init__(self, displacement_sigma=1.0 * unit.nanometer, **kwargs):
         super(MCDisplacementMove, self).__init__(**kwargs)
         self.displacement_sigma = displacement_sigma
 
     @staticmethod
-    def displace_positions(positions, displacement_sigma=1.0*unit.nanometer):
+    def displace_positions(positions, displacement_sigma=1.0 * unit.nanometer):
         """Return the positions after applying a random displacement to them.
 
         Parameters
@@ -1747,18 +1876,19 @@ class MCDisplacementMove(MetropolizedMove):
         """
         positions_unit = positions.unit
         unitless_displacement_sigma = displacement_sigma / positions_unit
-        displacement_vector = unit.Quantity(np.random.randn(3) * unitless_displacement_sigma,
-                                            positions_unit)
+        displacement_vector = unit.Quantity(
+            np.random.randn(3) * unitless_displacement_sigma, positions_unit
+        )
         return positions + displacement_vector
 
     def __getstate__(self):
         serialization = super(MCDisplacementMove, self).__getstate__()
-        serialization['displacement_sigma'] = self.displacement_sigma
+        serialization["displacement_sigma"] = self.displacement_sigma
         return serialization
 
     def __setstate__(self, serialization):
         super(MCDisplacementMove, self).__setstate__(serialization)
-        self.displacement_sigma = serialization['displacement_sigma']
+        self.displacement_sigma = serialization["displacement_sigma"]
 
     def _propose_positions(self, initial_positions):
         """Implement MetropolizedMove._propose_positions for apply()."""
@@ -1768,6 +1898,7 @@ class MCDisplacementMove(MetropolizedMove):
 # =============================================================================
 # RANDOM ROTATION MOVE
 # =============================================================================
+
 
 class MCRotationMove(MetropolizedMove):
     """A metropolized move that randomly rotate a subset of atoms.
@@ -1820,7 +1951,9 @@ class MCRotationMove(MetropolizedMove):
         rotation_matrix = cls.generate_random_rotation_matrix()
 
         # Apply rotation.
-        x_proposed = (rotation_matrix * np.matrix(x_initial - x_initial_mean).T).T + x_initial_mean
+        x_proposed = (
+            rotation_matrix * np.matrix(x_initial - x_initial_mean).T
+        ).T + x_initial_mean
         return unit.Quantity(x_proposed, positions_unit)
 
     @classmethod
@@ -1868,14 +2001,26 @@ class MCRotationMove(MetropolizedMove):
         else:
             s = 0.0
 
-        X = x*s;   Y = y*s;  Z = z*s
-        wX = w*X; wY = w*Y; wZ = w*Z
-        xX = x*X; xY = x*Y; xZ = x*Z
-        yY = y*Y; yZ = y*Z; zZ = z*Z
+        X = x * s
+        Y = y * s
+        Z = z * s
+        wX = w * X
+        wY = w * Y
+        wZ = w * Z
+        xX = x * X
+        xY = x * Y
+        xZ = x * Z
+        yY = y * Y
+        yZ = y * Z
+        zZ = z * Z
 
-        Rq = np.matrix([[1.0-(yY+zZ),     xY-wZ,          xZ+wY],
-                        [xY+wZ,        1.0-(xX+zZ),       yZ-wX],
-                        [xZ-wY,           yZ+wX,    1.0-(xX+yY)]])
+        Rq = np.matrix(
+            [
+                [1.0 - (yY + zZ), xY - wZ, xZ + wY],
+                [xY + wZ, 1.0 - (xX + zZ), yZ - wX],
+                [xZ - wY, yZ + wX, 1.0 - (xX + yY)],
+            ]
+        )
 
         return Rq
 
@@ -1895,10 +2040,14 @@ class MCRotationMove(MetropolizedMove):
 
         """
         u = np.random.rand(3)
-        q = np.array([np.sqrt(1-u[0])*np.sin(2*np.pi*u[1]),
-                      np.sqrt(1-u[0])*np.cos(2*np.pi*u[1]),
-                      np.sqrt(u[0])*np.sin(2*np.pi*u[2]),
-                      np.sqrt(u[0])*np.cos(2*np.pi*u[2])])
+        q = np.array(
+            [
+                np.sqrt(1 - u[0]) * np.sin(2 * np.pi * u[1]),
+                np.sqrt(1 - u[0]) * np.cos(2 * np.pi * u[1]),
+                np.sqrt(u[0]) * np.sin(2 * np.pi * u[2]),
+                np.sqrt(u[0]) * np.cos(2 * np.pi * u[2]),
+            ]
+        )
         return q
 
     def _propose_positions(self, initial_positions):
@@ -1912,4 +2061,5 @@ class MCRotationMove(MetropolizedMove):
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

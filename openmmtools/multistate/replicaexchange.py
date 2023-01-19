@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 # REPLICA-EXCHANGE SIMULATION
 # ==============================================================================
 
+
 class ReplicaExchangeSampler(multistate.MultiStateSampler):
     """Replica-exchange simulation facility.
 
@@ -211,30 +212,37 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
     # Constructors.
     # -------------------------------------------------------------------------
 
-    def __init__(self, replica_mixing_scheme='swap-all', **kwargs):
+    def __init__(self, replica_mixing_scheme="swap-all", **kwargs):
 
         # Initialize multi-state sampler simulation.
         super(ReplicaExchangeSampler, self).__init__(**kwargs)
         self.replica_mixing_scheme = replica_mixing_scheme
 
     class _StoredProperty(multistate.MultiStateSampler._StoredProperty):
-
         @staticmethod
         def _repex_mixing_scheme_validator(instance, replica_mixing_scheme):
-            supported_schemes = ['swap-all', 'swap-neighbors', None]
+            supported_schemes = ["swap-all", "swap-neighbors", None]
             if replica_mixing_scheme not in supported_schemes:
-                raise ValueError("Unknown replica mixing scheme '{}'. Supported values "
-                                 "are {}.".format(replica_mixing_scheme, supported_schemes))
+                raise ValueError(
+                    "Unknown replica mixing scheme '{}'. Supported values "
+                    "are {}.".format(replica_mixing_scheme, supported_schemes)
+                )
             if instance.locality is not None:
-                if replica_mixing_scheme not in ['swap-neighbors']:
-                    raise ValueError("replica_mixing_scheme must be 'swap-neighbors' if locality is used")
+                if replica_mixing_scheme not in ["swap-neighbors"]:
+                    raise ValueError(
+                        "replica_mixing_scheme must be 'swap-neighbors' if locality is used"
+                    )
             return replica_mixing_scheme
 
-    replica_mixing_scheme = _StoredProperty('replica_mixing_scheme',
-                                            validate_function=_StoredProperty._repex_mixing_scheme_validator)
+    replica_mixing_scheme = _StoredProperty(
+        "replica_mixing_scheme",
+        validate_function=_StoredProperty._repex_mixing_scheme_validator,
+    )
 
-    _TITLE_TEMPLATE = ('Replica-exchange sampler simulation created using ReplicaExchangeSampler class '
-                       'of openmmtools.multistate on {}')
+    _TITLE_TEMPLATE = (
+        "Replica-exchange sampler simulation created using ReplicaExchangeSampler class "
+        "of openmmtools.multistate on {}"
+    )
 
     def _pre_write_create(self, thermodynamic_states, sampler_states, *args, **kwargs):
         """Overwrite parent implementation to make sure the number of
@@ -243,12 +251,17 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         # Make sure there are no more sampler states than thermodynamic states.
         n_states = len(thermodynamic_states)
         if len(sampler_states) > n_states:
-            raise ValueError('Passed {} SamplerStates but only {} ThermodynamicStates'.format(
-                len(sampler_states), n_states))
+            raise ValueError(
+                "Passed {} SamplerStates but only {} ThermodynamicStates".format(
+                    len(sampler_states), n_states
+                )
+            )
 
         # Distribute sampler states to replicas in a round-robin fashion.
         # The sampler states are deep-copied inside super()._pre_write_create().
-        sampler_states = [sampler_states[i % len(sampler_states)] for i in range(n_states)]
+        sampler_states = [
+            sampler_states[i % len(sampler_states)] for i in range(n_states)
+        ]
 
         super()._pre_write_create(thermodynamic_states, sampler_states, *args, **kwargs)
 
@@ -262,21 +275,24 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         self._n_proposed_matrix[:, :] = 0
 
         # Perform swap attempts according to requested scheme.
-        with utils.time_it('Mixing of replicas'):
-            if self.replica_mixing_scheme == 'swap-neighbors':
+        with utils.time_it("Mixing of replicas"):
+            if self.replica_mixing_scheme == "swap-neighbors":
                 logger.info("Mixing neighbouring replicas")
                 self._mix_neighboring_replicas()
-            elif self.replica_mixing_scheme == 'swap-all':
+            elif self.replica_mixing_scheme == "swap-all":
                 nswap_attempts = self.n_replicas**3
                 logger.info(f"swap attempts {nswap_attempts}")
                 # Try to use numba-accelerated mixing code if possible,
                 # otherwise fall back to Python-accelerated code.
                 try:
                     self._mix_all_replicas_numba(
-                        nswap_attempts, self.n_replicas,
-                        self._replica_thermodynamic_states, self._energy_thermodynamic_states,
-                        self._n_accepted_matrix, self._n_proposed_matrix
-                        )
+                        nswap_attempts,
+                        self.n_replicas,
+                        self._replica_thermodynamic_states,
+                        self._energy_thermodynamic_states,
+                        self._n_accepted_matrix,
+                        self._n_proposed_matrix,
+                    )
                     logger.info("Mixing with numba-accelerated method")
                 except (ValueError, ImportError) as e:
                     logger.warning(str(e))
@@ -290,16 +306,23 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         swap_fraction_accepted = 0.0
         if n_swaps_proposed > 0:
             swap_fraction_accepted = n_swaps_accepted / n_swaps_proposed
-        logger.debug("Accepted {}/{} attempted swaps ({:.1f}%)".format(n_swaps_accepted, n_swaps_proposed,
-                                                                       swap_fraction_accepted * 100.0))
+        logger.debug(
+            "Accepted {}/{} attempted swaps ({:.1f}%)".format(
+                n_swaps_accepted, n_swaps_proposed, swap_fraction_accepted * 100.0
+            )
+        )
         return self._replica_thermodynamic_states
 
     @staticmethod
     @njit
     def _mix_all_replicas_numba(
         nswap_attempts,
-        n_replicas, _replica_thermodynamic_states, _energy_thermodynamic_states,
-        _n_accepted_matrix, _n_proposed_matrix):
+        n_replicas,
+        _replica_thermodynamic_states,
+        _energy_thermodynamic_states,
+        _n_accepted_matrix,
+        _n_proposed_matrix,
+    ):
         """
         numba-accelerated version of _mix_all_replicas()
 
@@ -336,7 +359,7 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
             energy_ji = _energy_thermodynamic_states[replica_j, thermodynamic_state_i]
             energy_ii = _energy_thermodynamic_states[replica_i, thermodynamic_state_i]
             energy_jj = _energy_thermodynamic_states[replica_j, thermodynamic_state_j]
-            log_p_accept = - (energy_ij + energy_ji) + energy_ii + energy_jj
+            log_p_accept = -(energy_ij + energy_ji) + energy_ii + energy_jj
 
             # Record that this move has been proposed.
             _n_proposed_matrix[thermodynamic_state_i, thermodynamic_state_j] += 1
@@ -357,7 +380,10 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         # TODO: Replace this with analytical result computed to guarantee sufficient mixing, or
         # TODO:     adjust it  based on how many we can afford to do and not have mixing take a
         # TODO:     substantial fraction of iteration time.
-        logger.debug("Will attempt to swap all pairs of replicas, using a total of %d attempts." % nswap_attempts)
+        logger.debug(
+            "Will attempt to swap all pairs of replicas, using a total of %d attempts."
+            % nswap_attempts
+        )
 
         # Attempt swaps to mix replicas.
         for swap_attempt in range(nswap_attempts):
@@ -374,12 +400,16 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
 
         # Attempt swaps of pairs of replicas using traditional scheme (e.g. [0,1], [2,3], ...).
         offset = np.random.randint(2)  # Offset is 0 or 1.
-        for thermodynamic_state_i in range(offset, self.n_replicas-1, 2):
+        for thermodynamic_state_i in range(offset, self.n_replicas - 1, 2):
             thermodynamic_state_j = thermodynamic_state_i + 1  # Neighboring state.
 
             # Determine which replicas currently hold the thermodynamic states.
-            replica_i = np.where(self._replica_thermodynamic_states == thermodynamic_state_i)
-            replica_j = np.where(self._replica_thermodynamic_states == thermodynamic_state_j)
+            replica_i = np.where(
+                self._replica_thermodynamic_states == thermodynamic_state_i
+            )
+            replica_j = np.where(
+                self._replica_thermodynamic_states == thermodynamic_state_j
+            )
             self._attempt_swap(replica_i, replica_j)
 
     def _attempt_swap(self, replica_i, replica_j):
@@ -393,7 +423,7 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         energy_ji = self._energy_thermodynamic_states[replica_j, thermodynamic_state_i]
         energy_ii = self._energy_thermodynamic_states[replica_i, thermodynamic_state_i]
         energy_jj = self._energy_thermodynamic_states[replica_j, thermodynamic_state_j]
-        log_p_accept = - (energy_ij + energy_ji) + energy_ii + energy_jj
+        log_p_accept = -(energy_ij + energy_ji) + energy_ii + energy_jj
 
         # Record that this move has been proposed.
         self._n_proposed_matrix[thermodynamic_state_i, thermodynamic_state_j] += 1
@@ -419,12 +449,14 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         gibbs_citations = """\
         Chodera JD and Shirts MR. Replica exchange and expanded ensemble simulations as Gibbs multistate: Simple improvements for enhanced mixing. J. Chem. Phys., 135:194110, 2011. DOI:10.1063/1.3660669
         """
-        if self.replica_mixing_scheme == 'swap-all':
+        if self.replica_mixing_scheme == "swap-all":
             if citation_stack is None:
                 citation_stack = [gibbs_citations]
             else:
                 citation_stack = [gibbs_citations] + citation_stack
-        super()._display_citations(overwrite_global=overwrite_global, citation_stack=citation_stack)
+        super()._display_citations(
+            overwrite_global=overwrite_global, citation_stack=citation_stack
+        )
 
 
 class ReplicaExchangeAnalyzer(MultiStateSamplerAnalyzer):
@@ -439,7 +471,9 @@ class ReplicaExchangeAnalyzer(MultiStateSamplerAnalyzer):
     MultiStateSamplerAnalyzer
 
     """
+
     pass
+
 
 # ==============================================================================
 # MAIN AND TESTS
@@ -447,4 +481,5 @@ class ReplicaExchangeAnalyzer(MultiStateSamplerAnalyzer):
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

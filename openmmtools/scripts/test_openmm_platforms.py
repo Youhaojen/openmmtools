@@ -1,8 +1,8 @@
 #!/usr/local/bin/env python
 
-#=============================================================================================
+# =============================================================================================
 # MODULE DOCSTRING
-#=============================================================================================
+# =============================================================================================
 
 """
 Test all test systems on different platforms to ensure differences in potential energy and
@@ -29,18 +29,20 @@ TODO
 
 """
 
-#=============================================================================================
+# =============================================================================================
 # PYTHON 3 COMPATIBILITY CRAP
-#=============================================================================================
+# =============================================================================================
 
 from __future__ import print_function
 
-#=============================================================================================
+# =============================================================================================
 # ENABLE LOGGING
-#=============================================================================================
+# =============================================================================================
 
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 def config_root_logger(verbose, log_file_path=None, mpicomm=None):
     """Setup the the root logger's configuration.
@@ -78,8 +80,8 @@ def config_root_logger(verbose, log_file_path=None, mpicomm=None):
 
         # This is the cleanest way I found to make the code compatible with both
         # Python 2 and Python 3
-        simple_fmt = logging.Formatter('%(message)s')
-        default_fmt = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
+        simple_fmt = logging.Formatter("%(message)s")
+        default_fmt = logging.Formatter("%(levelname)s - %(name)s - %(message)s")
 
         def format(self, record):
             if record.levelno <= logging.INFO:
@@ -116,8 +118,8 @@ def config_root_logger(verbose, log_file_path=None, mpicomm=None):
 
     # Add file handler to root logger
     if log_file_path is not None:
-        #file_format = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-        file_format = '%(asctime)s: %(message)s'
+        # file_format = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+        file_format = "%(asctime)s: %(message)s"
         file_handler = logging.FileHandler(log_file_path)
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(logging.Formatter(file_format))
@@ -129,9 +131,10 @@ def config_root_logger(verbose, log_file_path=None, mpicomm=None):
     else:
         logging.root.setLevel(terminal_handler.level)
 
-#=============================================================================================
+
+# =============================================================================================
 # GLOBAL IMPORTS
-#=============================================================================================
+# =============================================================================================
 
 import os
 import os.path
@@ -147,15 +150,20 @@ except ImportError:  # OpenMM < 7.6
 
 from openmmtools import testsystems
 
-#=============================================================================================
+# =============================================================================================
 # SUBROUTINES
-#=============================================================================================
+# =============================================================================================
 
 # These settings control what tolerance is allowed between platforms and the Reference platform.
-ENERGY_TOLERANCE = 0.06*units.kilocalories_per_mole # energy difference tolerance
-FORCE_RMSE_TOLERANCE = 0.06*units.kilocalories_per_mole/units.angstrom # per-particle force root-mean-square error tolerance
+ENERGY_TOLERANCE = 0.06 * units.kilocalories_per_mole  # energy difference tolerance
+FORCE_RMSE_TOLERANCE = (
+    0.06 * units.kilocalories_per_mole / units.angstrom
+)  # per-particle force root-mean-square error tolerance
 
-def assert_approximately_equal(computed_potential, expected_potential, tolerance=ENERGY_TOLERANCE):
+
+def assert_approximately_equal(
+    computed_potential, expected_potential, tolerance=ENERGY_TOLERANCE
+):
     """
     Check whether computed potential is acceptably close to expected value, using an error tolerance.
 
@@ -175,13 +183,17 @@ def assert_approximately_equal(computed_potential, expected_potential, tolerance
     """
 
     # Compute error.
-    error = (computed_potential - expected_potential)
+    error = computed_potential - expected_potential
 
     # Raise an exception if the error is larger than the tolerance.
     if abs(error) > tolerance:
-        raise Exception("Computed potential %s, expected %s.  Error %s is larger than acceptable tolerance of %s." % (computed_potential, expected_potential, error, tolerance))
+        raise Exception(
+            "Computed potential %s, expected %s.  Error %s is larger than acceptable tolerance of %s."
+            % (computed_potential, expected_potential, error, tolerance)
+        )
 
     return
+
 
 def compute_potential_and_force(system, positions, platform):
     """
@@ -218,7 +230,10 @@ def compute_potential_and_force(system, positions, platform):
 
     return [potential, force]
 
-def compute_potential_and_force_by_force_index(system, positions, platform, force_index):
+
+def compute_potential_and_force_by_force_index(
+    system, positions, platform, force_index
+):
     """
     Compute the energy and force for the given system and positions in the designated platform for the given force index.
 
@@ -236,15 +251,17 @@ def compute_potential_and_force_by_force_index(system, positions, platform, forc
 
     """
 
-    forces = [ system.getForce(index) for index in range(system.getNumForces()) ]
+    forces = [system.getForce(index) for index in range(system.getNumForces())]
 
     # Get original force groups.
-    groups = [ force.getForceGroup() for force in forces ]
+    groups = [force.getForceGroup() for force in forces]
 
     # Set force groups so only specified force_index contributes.
     for force in forces:
         force.setForceGroup(1)
-    forces[force_index].setForceGroup(0) # bitmask of 1 should select only desired force
+    forces[force_index].setForceGroup(
+        0
+    )  # bitmask of 1 should select only desired force
 
     # Create a Context.
     kB = units.BOLTZMANN_CONSTANT_kB
@@ -268,7 +285,10 @@ def compute_potential_and_force_by_force_index(system, positions, platform, forc
 
     return [potential, force]
 
-def compute_potential_and_force_by_force_group(system, positions, platform, force_group):
+
+def compute_potential_and_force_by_force_group(
+    system, positions, platform, force_group
+):
     """
     Compute the energy and force for the given system and positions in the designated platform for the given force group.
 
@@ -286,7 +306,7 @@ def compute_potential_and_force_by_force_group(system, positions, platform, forc
 
     """
 
-    forces = [ system.getForce(index) for index in range(system.getNumForces()) ]
+    forces = [system.getForce(index) for index in range(system.getNumForces())]
 
     # Create a Context.
     kB = units.BOLTZMANN_CONSTANT_kB
@@ -306,6 +326,7 @@ def compute_potential_and_force_by_force_group(system, positions, platform, forc
     force = state.getForces(asNumpy=True)
 
     return [potential, force]
+
 
 def get_all_subclasses(cls):
     """
@@ -331,20 +352,26 @@ def get_all_subclasses(cls):
 
     return all_subclasses
 
-#=============================================================================================
+
+# =============================================================================================
 # MAIN AND TESTS
-#=============================================================================================
+# =============================================================================================
+
 
 def main():
     import doctest
     import argparse
 
-    parser = argparse.ArgumentParser(description="Check OpenMM computed energies and forces across all platforms for a suite of test systems.")
-    parser.add_argument('-o', '--outfile', dest='logfile', action='store', type=str, default=None)
-    parser.add_argument('-v', dest='verbose', action='store_true')
+    parser = argparse.ArgumentParser(
+        description="Check OpenMM computed energies and forces across all platforms for a suite of test systems."
+    )
+    parser.add_argument(
+        "-o", "--outfile", dest="logfile", action="store", type=str, default=None
+    )
+    parser.add_argument("-v", dest="verbose", action="store_true")
     args = parser.parse_args()
 
-    verbose = args.verbose # Don't display extra debug information.
+    verbose = args.verbose  # Don't display extra debug information.
     config_root_logger(verbose, log_file_path=args.logfile)
 
     # Print version.
@@ -360,14 +387,17 @@ def main():
 
     # Test all systems on Reference platform.
     platform = openmm.Platform.getPlatformByName("Reference")
-    print('Testing Reference platform...')
+    print("Testing Reference platform...")
     doctest.testmod()
 
     # Compute energy error made on all test systems for other platforms.
     # Make a count of how often set tolerance is exceeded.
-    tests_failed = 0 # number of times tolerance is exceeded
-    tests_passed = 0 # number of times tolerance is not exceeded
-    logger.info("%16s%16s %16s          %16s          %16s          %16s" % ("platform", "precision", "potential", "error", "force mag", "rms error"))
+    tests_failed = 0  # number of times tolerance is exceeded
+    tests_passed = 0  # number of times tolerance is not exceeded
+    logger.info(
+        "%16s%16s %16s          %16s          %16s          %16s"
+        % ("platform", "precision", "potential", "error", "force mag", "rms error")
+    )
     reference_platform = openmm.Platform.getPlatformByName("Reference")
     testsystem_classes = get_all_subclasses(testsystems.TestSystem)
     for testsystem_class in testsystem_classes:
@@ -387,7 +417,9 @@ def main():
         logger.info("%s (%d atoms)" % (class_name, testsystem.system.getNumParticles()))
 
         # Compute reference potential and force
-        [reference_potential, reference_force] = compute_potential_and_force(system, positions, reference_platform)
+        [reference_potential, reference_force] = compute_potential_and_force(
+            system, positions, reference_platform
+        )
 
         # Test all platforms.
         test_success = True
@@ -397,22 +429,28 @@ def main():
                 platform_name = platform.getName()
 
                 # Define precision models to test.
-                if platform_name == 'Reference':
-                    precision_models = ['double']
+                if platform_name == "Reference":
+                    precision_models = ["double"]
                 else:
-                    precision_models = ['single']
+                    precision_models = ["single"]
                     if platform.supportsDoublePrecision():
-                        precision_models.append('double')
+                        precision_models.append("double")
 
                 for precision_model in precision_models:
                     # Set precision.
-                    if platform_name == 'CUDA':
-                        platform.setPropertyDefaultValue('CudaPrecision', precision_model)
-                    if platform_name == 'OpenCL':
-                        platform.setPropertyDefaultValue('OpenCLPrecision', precision_model)
+                    if platform_name == "CUDA":
+                        platform.setPropertyDefaultValue(
+                            "CudaPrecision", precision_model
+                        )
+                    if platform_name == "OpenCL":
+                        platform.setPropertyDefaultValue(
+                            "OpenCLPrecision", precision_model
+                        )
 
                     # Compute potential and force.
-                    [platform_potential, platform_force] = compute_potential_and_force(system, positions, platform)
+                    [platform_potential, platform_force] = compute_potential_and_force(
+                        system, positions, platform
+                    )
 
                     # Compute error in potential.
                     potential_error = platform_potential - reference_potential
@@ -420,28 +458,68 @@ def main():
                     # Compute per-atom RMS (magnitude) and RMS error in force.
                     force_unit = units.kilocalories_per_mole / units.nanometers
                     natoms = system.getNumParticles()
-                    force_mse = (((reference_force - platform_force) / force_unit)**2).sum() / natoms * force_unit**2
+                    force_mse = (
+                        (((reference_force - platform_force) / force_unit) ** 2).sum()
+                        / natoms
+                        * force_unit**2
+                    )
                     force_rmse = units.sqrt(force_mse)
 
-                    force_ms = ((platform_force / force_unit)**2).sum() / natoms * force_unit**2
+                    force_ms = (
+                        ((platform_force / force_unit) ** 2).sum()
+                        / natoms
+                        * force_unit**2
+                    )
                     force_rms = units.sqrt(force_ms)
 
-                    logger.info("%16s%16s %16.6f kcal/mol %16.6f kcal/mol %16.6f kcal/mol/nm %16.6f kcal/mol/nm" % (platform_name, precision_model, platform_potential / units.kilocalories_per_mole, potential_error / units.kilocalories_per_mole, force_rms / force_unit, force_rmse / force_unit))
+                    logger.info(
+                        "%16s%16s %16.6f kcal/mol %16.6f kcal/mol %16.6f kcal/mol/nm %16.6f kcal/mol/nm"
+                        % (
+                            platform_name,
+                            precision_model,
+                            platform_potential / units.kilocalories_per_mole,
+                            potential_error / units.kilocalories_per_mole,
+                            force_rms / force_unit,
+                            force_rmse / force_unit,
+                        )
+                    )
 
                     # Mark whether tolerance is exceeded or not.
                     if abs(potential_error) > ENERGY_TOLERANCE:
                         test_success = False
-                        logger.info("%32s WARNING: Potential energy error (%.6f kcal/mol) exceeds tolerance (%.6f kcal/mol).  Test failed." % ("", potential_error/units.kilocalories_per_mole, ENERGY_TOLERANCE/units.kilocalories_per_mole))
+                        logger.info(
+                            "%32s WARNING: Potential energy error (%.6f kcal/mol) exceeds tolerance (%.6f kcal/mol).  Test failed."
+                            % (
+                                "",
+                                potential_error / units.kilocalories_per_mole,
+                                ENERGY_TOLERANCE / units.kilocalories_per_mole,
+                            )
+                        )
                     if abs(force_rmse) > FORCE_RMSE_TOLERANCE:
                         test_success = False
-                        logger.info("%32s WARNING: Force RMS error (%.6f kcal/mol/nm) exceeds tolerance (%.6f kcal/mol/nm).  Test failed." % ("", force_rmse/force_unit, FORCE_RMSE_TOLERANCE/force_unit))
+                        logger.info(
+                            "%32s WARNING: Force RMS error (%.6f kcal/mol/nm) exceeds tolerance (%.6f kcal/mol/nm).  Test failed."
+                            % (
+                                "",
+                                force_rmse / force_unit,
+                                FORCE_RMSE_TOLERANCE / force_unit,
+                            )
+                        )
                         if verbose:
                             for atom_index in range(natoms):
                                 for k in range(3):
-                                    logger.info("%12.6f" % (reference_force[atom_index,k]/force_unit), end="")
+                                    logger.info(
+                                        "%12.6f"
+                                        % (reference_force[atom_index, k] / force_unit),
+                                        end="",
+                                    )
                                 logger.info(" : ", end="")
                                 for k in range(3):
-                                    logger.info("%12.6f" % (platform_force[atom_index,k]/force_unit), end="")
+                                    logger.info(
+                                        "%12.6f"
+                                        % (platform_force[atom_index, k] / force_unit),
+                                        end="",
+                                    )
             except Exception as e:
                 logger.info(e)
 
@@ -450,33 +528,38 @@ def main():
         else:
             tests_failed += 1
 
-        if (test_success is False):
+        if test_success is False:
             # Write XML files of failed tests to aid in debugging.
-            logger.info("Writing failed test system to '%s'.{system,state}.xml ..." % testsystem.name)
+            logger.info(
+                "Writing failed test system to '%s'.{system,state}.xml ..."
+                % testsystem.name
+            )
             [system_xml, state_xml] = testsystem.serialize()
-            xml_file = open(testsystem.name + '.system.xml', 'w')
+            xml_file = open(testsystem.name + ".system.xml", "w")
             xml_file.write(system_xml)
             xml_file.close()
-            xml_file = open(testsystem.name + '.state.xml', 'w')
+            xml_file = open(testsystem.name + ".state.xml", "w")
             xml_file.write(state_xml)
             xml_file.close()
 
-
             # Place forces into different force groups.
-            forces = [ system.getForce(force_index) for force_index in range(system.getNumForces()) ]
+            forces = [
+                system.getForce(force_index)
+                for force_index in range(system.getNumForces())
+            ]
             force_group_names = dict()
             group_index = 0
             for force_index in range(system.getNumForces()):
                 force_name = forces[force_index].__class__.__name__
-                if force_name == 'NonbondedForce':
-                    forces[force_index].setForceGroup(group_index+1)
-                    force_group_names[group_index] = 'NonbondedForce (direct)'
+                if force_name == "NonbondedForce":
+                    forces[force_index].setForceGroup(group_index + 1)
+                    force_group_names[group_index] = "NonbondedForce (direct)"
                     group_index += 1
-                    forces[force_index].setReciprocalSpaceForceGroup(group_index+1)
-                    force_group_names[group_index] = 'NonbondedForce (reciprocal)'
+                    forces[force_index].setReciprocalSpaceForceGroup(group_index + 1)
+                    force_group_names[group_index] = "NonbondedForce (reciprocal)"
                     group_index += 1
                 else:
-                    forces[force_index].setForceGroup(group_index+1)
+                    forces[force_index].setForceGroup(group_index + 1)
                     force_group_names[group_index] = force_name
                     group_index += 1
             ngroups = len(force_group_names)
@@ -487,8 +570,23 @@ def main():
             for force_group in range(ngroups):
                 force_name = force_group_names[force_group]
                 logger.info(force_name)
-                [reference_potential, reference_force] = compute_potential_and_force_by_force_group(system, positions, reference_platform, force_group)
-                logger.info("%16s%16s %16s          %16s          %16s          %16s" % ("platform", "precision", "potential", "error", "force mag", "rms error"))
+                [
+                    reference_potential,
+                    reference_force,
+                ] = compute_potential_and_force_by_force_group(
+                    system, positions, reference_platform, force_group
+                )
+                logger.info(
+                    "%16s%16s %16s          %16s          %16s          %16s"
+                    % (
+                        "platform",
+                        "precision",
+                        "potential",
+                        "error",
+                        "force mag",
+                        "rms error",
+                    )
+                )
 
                 for platform_index in range(openmm.Platform.getNumPlatforms()):
                     try:
@@ -496,22 +594,31 @@ def main():
                         platform_name = platform.getName()
 
                         # Define precision models to test.
-                        if platform_name == 'Reference':
-                            precision_models = ['double']
+                        if platform_name == "Reference":
+                            precision_models = ["double"]
                         else:
-                            precision_models = ['single']
+                            precision_models = ["single"]
                             if platform.supportsDoublePrecision():
-                                precision_models.append('double')
+                                precision_models.append("double")
 
                         for precision_model in precision_models:
                             # Set precision.
-                            if platform_name == 'CUDA':
-                                platform.setPropertyDefaultValue('CudaPrecision', precision_model)
-                            if platform_name == 'OpenCL':
-                                platform.setPropertyDefaultValue('OpenCLPrecision', precision_model)
+                            if platform_name == "CUDA":
+                                platform.setPropertyDefaultValue(
+                                    "CudaPrecision", precision_model
+                                )
+                            if platform_name == "OpenCL":
+                                platform.setPropertyDefaultValue(
+                                    "OpenCLPrecision", precision_model
+                                )
 
                             # Compute potential and force.
-                            [platform_potential, platform_force] = compute_potential_and_force_by_force_group(system, positions, platform, force_group)
+                            [
+                                platform_potential,
+                                platform_force,
+                            ] = compute_potential_and_force_by_force_group(
+                                system, positions, platform, force_group
+                            )
 
                             # Compute error in potential.
                             potential_error = platform_potential - reference_potential
@@ -519,13 +626,34 @@ def main():
                             # Compute per-atom RMS (magnitude) and RMS error in force.
                             force_unit = units.kilocalories_per_mole / units.nanometers
                             natoms = system.getNumParticles()
-                            force_mse = (((reference_force - platform_force) / force_unit)**2).sum() / natoms * force_unit**2
+                            force_mse = (
+                                (
+                                    ((reference_force - platform_force) / force_unit)
+                                    ** 2
+                                ).sum()
+                                / natoms
+                                * force_unit**2
+                            )
                             force_rmse = units.sqrt(force_mse)
 
-                            force_ms = ((platform_force / force_unit)**2).sum() / natoms * force_unit**2
+                            force_ms = (
+                                ((platform_force / force_unit) ** 2).sum()
+                                / natoms
+                                * force_unit**2
+                            )
                             force_rms = units.sqrt(force_ms)
 
-                            logger.info("%16s%16s %16.6f kcal/mol %16.6f kcal/mol %16.6f kcal/mol/nm %16.6f kcal/mol/nm" % (platform_name, precision_model, platform_potential / units.kilocalories_per_mole, potential_error / units.kilocalories_per_mole, force_rms / force_unit, force_rmse / force_unit))
+                            logger.info(
+                                "%16s%16s %16.6f kcal/mol %16.6f kcal/mol %16.6f kcal/mol/nm %16.6f kcal/mol/nm"
+                                % (
+                                    platform_name,
+                                    precision_model,
+                                    platform_potential / units.kilocalories_per_mole,
+                                    potential_error / units.kilocalories_per_mole,
+                                    force_rms / force_unit,
+                                    force_rmse / force_unit,
+                                )
+                            )
 
                     except Exception as e:
                         logger.info(e)
@@ -535,11 +663,12 @@ def main():
     logger.info("%d tests failed" % tests_failed)
     logger.info("%d tests passed" % tests_passed)
 
-    if (tests_failed > 0):
+    if tests_failed > 0:
         # Signal failure of test.
         sys.exit(1)
     else:
         sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

@@ -17,11 +17,15 @@ timestep = 2.0 * unit.femtoseconds
 equil_steps = 1500
 
 # Load AMBER files
-prmtop = app.AmberPrmtopFile('prmtop')
-inpcrd = app.AmberInpcrdFile('inpcrd')
+prmtop = app.AmberPrmtopFile("prmtop")
+inpcrd = app.AmberInpcrdFile("inpcrd")
 
 # Initialize system, including a barostat
-system = prmtop.createSystem(nonbondedMethod=app.CutoffPeriodic, nonbondedCutoff=1.0*unit.nanometer, constraints=app.HBonds)
+system = prmtop.createSystem(
+    nonbondedMethod=app.CutoffPeriodic,
+    nonbondedCutoff=1.0 * unit.nanometer,
+    constraints=app.HBonds,
+)
 system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
 box_vectors = inpcrd.getBoxVectors(asNumpy=True)
 system.setDefaultPeriodicBoxVectors(box_vectors[0], box_vectors[1], box_vectors[2])
@@ -41,8 +45,10 @@ integrator.step(equil_steps)
 openmm.LocalEnergyMinimizer.minimize(context)
 
 # Record the positions
-positions = context.getState(getPositions=True, enforcePeriodicBox=True).getPositions(asNumpy=True)
-pdbfile = open('minimized_dna_dodecamer.pdb', 'w')
+positions = context.getState(getPositions=True, enforcePeriodicBox=True).getPositions(
+    asNumpy=True
+)
+pdbfile = open("minimized_dna_dodecamer.pdb", "w")
 app.PDBFile.writeHeader(prmtop.topology, file=pdbfile)
 app.PDBFile.writeModel(prmtop.topology, positions, file=pdbfile, modelIndex=0)
 pdbfile.close()

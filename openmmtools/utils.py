@@ -31,6 +31,7 @@ import contextlib
 import zlib
 
 import numpy as np
+
 try:
     import openmm
     from openmm import unit
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # MISCELLANEOUS
 # =============================================================================
+
 
 @contextlib.contextmanager
 def temporary_directory():
@@ -57,9 +59,11 @@ def temporary_directory():
             # Warn that we weren't able to clean up completely
             logger.warning(e)
 
+
 # =============================================================================
 # BENCHMARKING UTILITIES
 # =============================================================================
+
 
 @contextlib.contextmanager
 def time_it(task_name):
@@ -87,12 +91,15 @@ def with_timer(task_name):
         The name of the task that will be reported.
 
     """
+
     def _with_timer(func):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             with time_it(task_name):
                 return func(*args, **kwargs)
+
         return _wrapper
+
     return _with_timer
 
 
@@ -176,7 +183,7 @@ class Timer(object):
 
         """
         for benchmark_id, elapsed_time in self._completed.items():
-            logger.debug('{} took {:8.3f}s'.format(benchmark_id, elapsed_time))
+            logger.debug("{} took {:8.3f}s".format(benchmark_id, elapsed_time))
 
         if clear is True:
             self.reset_timing_statistics()
@@ -188,7 +195,7 @@ class Timer(object):
 
 # Dict reserved_keyword: compiled_regex_pattern. This is used by
 _RESERVED_WORDS_PATTERNS = {
-    'lambda': re.compile(r'(?<![a-zA-Z0-9_])lambda(?![a-zA-Z0-9_])')
+    "lambda": re.compile(r"(?<![a-zA-Z0-9_])lambda(?![a-zA-Z0-9_])")
 }
 
 
@@ -222,7 +229,7 @@ def sanitize_expression(expression, variables):
         if word in variables:  # Don't make unneeded substitutions.
             if sanitized_variables is None:
                 sanitized_variables = copy.deepcopy(variables)
-            sanitized_word = '_sanitized__' + word
+            sanitized_word = "_sanitized__" + word
             sanitized_expression = pattern.sub(sanitized_word, sanitized_expression)
             variable_value = sanitized_variables.pop(word)
             sanitized_variables[sanitized_word] = variable_value
@@ -272,17 +279,25 @@ def math_eval(expression, variables=None, functions=None):
 
     """
     # Supported operators.
-    operators = {ast.Add: operator.add, ast.Sub: operator.sub,
-                 ast.Mult: operator.mul, ast.Div: operator.truediv,
-                 ast.Pow: operator.pow, ast.USub: operator.neg,
-                 ast.BitAnd: operator.and_, ast.And: operator.and_,
-                 ast.BitOr: operator.or_, ast.Or: operator.or_
-                 }
+    operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+        ast.BitAnd: operator.and_,
+        ast.And: operator.and_,
+        ast.BitOr: operator.or_,
+        ast.Or: operator.or_,
+    }
 
     # Supported functions, not defined in math.
-    extra_functions = {'step': lambda x: 1 * (x >= 0),
-                       'step_hm': lambda x: 0.5 * (np.sign(x) + 1),
-                       'sign': lambda x: np.sign(x)}
+    extra_functions = {
+        "step": lambda x: 1 * (x >= 0),
+        "step_hm": lambda x: 0.5 * (np.sign(x) + 1),
+        "sign": lambda x: np.sign(x),
+    }
 
     # Allow overwrite of extra_functions.
     if functions is not None:
@@ -295,8 +310,9 @@ def math_eval(expression, variables=None, functions=None):
         elif isinstance(node, ast.UnaryOp):
             return operators[type(node.op)](_math_eval(node.operand))
         elif isinstance(node, ast.BinOp):
-            return operators[type(node.op)](_math_eval(node.left),
-                                            _math_eval(node.right))
+            return operators[type(node.op)](
+                _math_eval(node.left), _math_eval(node.right)
+            )
         elif isinstance(node, ast.BoolOp):
             # Parse ternary operator
             if len(node.values) > 2:
@@ -305,12 +321,14 @@ def math_eval(expression, variables=None, functions=None):
                 left_value.values.pop(-1)
             else:
                 left_value = node.values[0]
-            return operators[type(node.op)](_math_eval(left_value), _math_eval(node.values[-1]))
+            return operators[type(node.op)](
+                _math_eval(left_value), _math_eval(node.values[-1])
+            )
         elif isinstance(node, ast.Name):
             try:
                 return variables[node.id]
             except KeyError:
-                raise ValueError('Variable {} was not provided'.format(node.id))
+                raise ValueError("Variable {} was not provided".format(node.id))
         elif isinstance(node, ast.Call):
             args = [_math_eval(arg) for arg in node.args]
             try:
@@ -319,9 +337,11 @@ def math_eval(expression, variables=None, functions=None):
                 try:
                     return functions[node.func.id](*args)
                 except KeyError:
-                    raise ValueError('Function {} is not supported'.format(node.func.id))
+                    raise ValueError(
+                        "Function {} is not supported".format(node.func.id)
+                    )
         else:
-            raise TypeError('Cannot parse expression: {}'.format(expression))
+            raise TypeError("Cannot parse expression: {}".format(expression))
 
     if variables is None:
         variables = {}
@@ -329,19 +349,22 @@ def math_eval(expression, variables=None, functions=None):
     # Sanitized reserved words.
     expression, variables = sanitize_expression(expression, variables)
 
-    return _math_eval(ast.parse(expression, mode='eval').body)
+    return _math_eval(ast.parse(expression, mode="eval").body)
 
 
 # =============================================================================
 # QUANTITY UTILITIES
 # =============================================================================
 
+
 def _changes_state(func):
     """Decorator to signal changes in TrackedQuantity."""
+
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         self.has_changed = True
         return func(self, *args, **kwargs)
+
     return wrapper
 
 
@@ -354,7 +377,9 @@ class TrackedQuantity(unit.Quantity):
 
     def __getitem__(self, item):
         if isinstance(item, slice) and isinstance(self._value, np.ndarray):
-            return TrackedQuantityView(self, super(TrackedQuantity, self).__getitem__(item))
+            return TrackedQuantityView(
+                self, super(TrackedQuantity, self).__getitem__(item)
+            )
         # No need to track a copy.
         return super(TrackedQuantity, self).__getitem__(item)
 
@@ -376,8 +401,10 @@ class TrackedQuantityView(unit.Quantity):
 
     def __getitem__(self, item):
         if isinstance(item, slice):
-            return TrackedQuantityView(self._tracked_quantity,
-                                       super(TrackedQuantityView, self).__getitem__(item))
+            return TrackedQuantityView(
+                self._tracked_quantity,
+                super(TrackedQuantityView, self).__getitem__(item),
+            )
         # No need to track a copy.
         return super(TrackedQuantityView, self).__getitem__(item)
 
@@ -386,14 +413,20 @@ class TrackedQuantityView(unit.Quantity):
         self._tracked_quantity.has_changed = True
 
 
-
 # List of openmm.unit methods that are actually units and functions instead of base classes
 # Pre-computed to reduce run-time cost
 # Get the built-in units
-_VALID_UNITS = {method: getattr(unit, method) for method in dir(unit) if type(getattr(unit, method)) is unit.Unit}
+_VALID_UNITS = {
+    method: getattr(unit, method)
+    for method in dir(unit)
+    if type(getattr(unit, method)) is unit.Unit
+}
 # Get the built in unit functions and make sure they are not just types
-_VALID_UNIT_FUNCTIONS = {method: getattr(unit, method) for method in dir(unit)
-                         if callable(getattr(unit, method)) and type(getattr(unit, method)) is not type}
+_VALID_UNIT_FUNCTIONS = {
+    method: getattr(unit, method)
+    for method in dir(unit)
+    if callable(getattr(unit, method)) and type(getattr(unit, method)) is not type
+}
 
 
 def is_quantity_close(quantity1, quantity2, rtol=1e-10, atol=0.0):
@@ -421,8 +454,11 @@ def is_quantity_close(quantity1, quantity2, rtol=1e-10, atol=0.0):
 
     """
     if not quantity1.unit.is_compatible(quantity2.unit):
-        raise TypeError('Cannot compare incompatible quantities {} and {}'.format(
-            quantity1, quantity2))
+        raise TypeError(
+            "Cannot compare incompatible quantities {} and {}".format(
+                quantity1, quantity2
+            )
+        )
 
     value1 = quantity1.value_in_unit_system(unit.md_unit_system)
     value2 = quantity2.value_in_unit_system(unit.md_unit_system)
@@ -465,11 +501,11 @@ def quantity_from_string(expression):
     variables = _VALID_UNITS
 
     # Eliminate nested quotes and excess whitespace
-    expression = expression.strip('\'" ')
+    expression = expression.strip("'\" ")
 
     # Handle a special case of the unit when it is just "inverse unit", e.g. Hz == /second
-    if expression[0] == '/':
-        expression = '(' + expression[1:] + ')**(-1)'
+    if expression[0] == "/":
+        expression = "(" + expression[1:] + ")**(-1)"
 
     return math_eval(expression, variables=variables, functions=functions)
 
@@ -499,13 +535,13 @@ def typename(atype):
 
     """
     if not isinstance(atype, type):
-        raise Exception('Argument is not a type')
+        raise Exception("Argument is not a type")
 
     modulename = atype.__module__
     typename = atype.__name__
 
-    if modulename not in ['__builtin__', 'builtins']:
-        typename = modulename + '.' + typename
+    if modulename not in ["__builtin__", "builtins"]:
+        typename = modulename + "." + typename
 
     return typename
 
@@ -513,6 +549,7 @@ def typename(atype):
 # =============================================================================
 # OPENMM PLATFORM UTILITIES
 # =============================================================================
+
 
 def platform_supports_precision(platform, precision):
     """Determine whether the specified OpenMM Platform supports the specified minimum precision.
@@ -529,24 +566,26 @@ def platform_supports_precision(platform, precision):
     is_supported : bool
         True if the platform supports the specified precision; False otherwise
     """
-    SUPPORTED_PRECISIONS = ['single', 'mixed', 'double']
-    assert precision in SUPPORTED_PRECISIONS, f"Precision {precision} must be one of {SUPPORTED_PRECISIONS}"
+    SUPPORTED_PRECISIONS = ["single", "mixed", "double"]
+    assert (
+        precision in SUPPORTED_PRECISIONS
+    ), f"Precision {precision} must be one of {SUPPORTED_PRECISIONS}"
 
     if isinstance(platform, str):
         # Get the actual Platform object if the platform_name was specified
         platform = openmm.Platform.getPlatformByName(platform)
 
-    if platform.getName() == 'Reference':
+    if platform.getName() == "Reference":
         # Reference is double precision
-        return (precision == 'double')
+        return precision == "double"
 
-    if platform.getName() == 'CPU':
-        return precision in ['mixed']
+    if platform.getName() == "CPU":
+        return precision in ["mixed"]
 
-    if platform.getName() in ['CUDA', 'OpenCL']:
-        properties = { 'Precision' : precision }
+    if platform.getName() in ["CUDA", "OpenCL"]:
+        properties = {"Precision": precision}
         system = openmm.System()
-        system.addParticle(1.0) # Cannot create Context on a system with no particles
+        system.addParticle(1.0)  # Cannot create Context on a system with no particles
         integrator = openmm.VerletIntegrator(0.001)
         try:
             context = openmm.Context(system, integrator, platform, properties)
@@ -557,7 +596,8 @@ def platform_supports_precision(platform, precision):
 
     raise Exception(f"Platform {platform.getName()} unknown")
 
-def get_available_platforms(minimum_precision='mixed'):
+
+def get_available_platforms(minimum_precision="mixed"):
     """Return a list of the available OpenMM Platforms that can satisfy the requested minimum precision.
 
     Parameters
@@ -571,15 +611,22 @@ def get_available_platforms(minimum_precision='mixed'):
     platforms : list of openmm.Platform
         Platforms that support specified minimumprecision
     """
-    platforms = [openmm.Platform.getPlatform(i) for i in range(openmm.Platform.getNumPlatforms())]
+    platforms = [
+        openmm.Platform.getPlatform(i) for i in range(openmm.Platform.getNumPlatforms())
+    ]
 
     if minimum_precision is not None:
         # Filter based on precision support
-        platforms = [ platform for platform in platforms if platform_supports_precision(platform, minimum_precision) ]
+        platforms = [
+            platform
+            for platform in platforms
+            if platform_supports_precision(platform, minimum_precision)
+        ]
 
     return platforms
 
-def get_fastest_platform(minimum_precision='mixed'):
+
+def get_fastest_platform(minimum_precision="mixed"):
     """Return the fastest available platform.
 
     This relies on the hardcoded speed values in Platform.getSpeed().
@@ -604,7 +651,7 @@ def get_fastest_platform(minimum_precision='mixed'):
 # SERIALIZATION UTILITIES
 # =============================================================================
 
-_SERIALIZED_MANGLED_PREFIX = '_serialized__'
+_SERIALIZED_MANGLED_PREFIX = "_serialized__"
 
 
 def serialize(instance, **kwargs):
@@ -639,9 +686,11 @@ def serialize(instance, **kwargs):
     try:
         serialization = instance.__getstate__(**kwargs)
     except AttributeError:
-        raise ValueError('Cannot serialize class {} without a __getstate__ method'.format(class_name))
-    serialization[_SERIALIZED_MANGLED_PREFIX + 'module_name'] = module_name
-    serialization[_SERIALIZED_MANGLED_PREFIX + 'class_name'] = class_name
+        raise ValueError(
+            "Cannot serialize class {} without a __getstate__ method".format(class_name)
+        )
+    serialization[_SERIALIZED_MANGLED_PREFIX + "module_name"] = module_name
+    serialization[_SERIALIZED_MANGLED_PREFIX + "class_name"] = class_name
     return serialization
 
 
@@ -664,12 +713,14 @@ def deserialize(serialization):
 
     """
     names = []
-    for key in ['module_name', 'class_name']:
+    for key in ["module_name", "class_name"]:
         try:
             names.append(serialization.pop(_SERIALIZED_MANGLED_PREFIX + key))
         except KeyError:
-            raise ValueError('Cannot find {} in the serialization. Was the original object '
-                             'serialized with openmmtools.utils.serialize()?'.format(key))
+            raise ValueError(
+                "Cannot find {} in the serialization. Was the original object "
+                "serialized with openmmtools.utils.serialize()?".format(key)
+            )
     module_name, class_name = names  # unpack
     module = importlib.import_module(module_name)
     cls = getattr(module, class_name)
@@ -677,7 +728,11 @@ def deserialize(serialization):
     try:
         instance.__setstate__(serialization)
     except AttributeError:
-        raise ValueError('Cannot deserialize class {} without a __setstate__ method'.format(class_name))
+        raise ValueError(
+            "Cannot deserialize class {} without a __setstate__ method".format(
+                class_name
+            )
+        )
     return instance
 
 
@@ -699,7 +754,8 @@ def with_metaclass(metaclass, *bases):
     class Metaclass(metaclass):
         def __new__(cls, name, this_bases, d):
             return metaclass(name, bases, d)
-    return type.__new__(Metaclass, 'temporary_class', (), {})
+
+    return type.__new__(Metaclass, "temporary_class", (), {})
 
 
 class SubhookedABCMeta(with_metaclass(abc.ABCMeta)):
@@ -721,6 +777,7 @@ class SubhookedABCMeta(with_metaclass(abc.ABCMeta)):
     True
 
     """
+
     @classmethod
     def __subclasshook__(cls, subclass):
         for abstract_method in cls.__abstractmethods__:
@@ -787,11 +844,15 @@ def find_subclass(parent_cls, subcls_name):
         if subcls.__name__ == subcls_name:
             subclasses.append(subcls)
     if len(subclasses) == 0:
-        raise ValueError('Could not find class {} inheriting from {}'
-                         ''.format(subcls_name, parent_cls))
+        raise ValueError(
+            "Could not find class {} inheriting from {}"
+            "".format(subcls_name, parent_cls)
+        )
     if len(subclasses) > 1:
-        raise ValueError('Found multiple classes inheriting from {}: {}'
-                         ''.format(parent_cls, subclasses))
+        raise ValueError(
+            "Found multiple classes inheriting from {}: {}"
+            "".format(parent_cls, subclasses)
+        )
     return subclasses[0]
 
 
@@ -799,8 +860,10 @@ def find_subclass(parent_cls, subcls_name):
 # RESTORABLE OPENMM OBJECT
 # =============================================================================
 
+
 class RestorableOpenMMObjectError(Exception):
     """Raised when the object has a restorable hash but no matching class can be found."""
+
     pass
 
 
@@ -823,8 +886,9 @@ class RestorableOpenMMObject(object):
 
     def __init__(self, *args, **kwargs):
         super(RestorableOpenMMObject, self).__init__(*args, **kwargs)
-        self._add_global_parameter(self, self._hash_parameter_name,
-                                   self._compute_class_hash(self.__class__))
+        self._add_global_parameter(
+            self, self._hash_parameter_name, self._compute_class_hash(self.__class__)
+        )
 
     @classmethod
     def is_restorable(cls, openmm_object):
@@ -873,17 +937,20 @@ class RestorableOpenMMObject(object):
 
         # Reload the hash table for all subclasses if there's no matching class.
         if object_hash not in cls._cached_hash_subclasses:
-            all_subclasses = find_all_subclasses(parent_cls=cls, discard_abstract=True,
-                                                 include_parent=True)
-            cls._cached_hash_subclasses = {cls._compute_class_hash(subcls): subcls
-                                           for subcls in all_subclasses}
+            all_subclasses = find_all_subclasses(
+                parent_cls=cls, discard_abstract=True, include_parent=True
+            )
+            cls._cached_hash_subclasses = {
+                cls._compute_class_hash(subcls): subcls for subcls in all_subclasses
+            }
 
         # Retrieve object class.
         try:
             object_class = cls._cached_hash_subclasses[object_hash]
         except KeyError:
-            raise RestorableOpenMMObjectError('Could not find a class matching '
-                                              'the hash {}'.format(object_hash))
+            raise RestorableOpenMMObjectError(
+                "Could not find a class matching " "the hash {}".format(object_hash)
+            )
 
         # Restore class interface.
         openmm_object.__class__ = object_class
@@ -906,10 +973,10 @@ class RestorableOpenMMObject(object):
         having a global variable with the same name of a custom force.
         """
         if cls._is_force(openmm_object):
-            return '_restorable_force__class_hash'
+            return "_restorable_force__class_hash"
         else:
             # Use _restorable__class_hash with integrators for backwards compatibility.
-            return '_restorable__class_hash'
+            return "_restorable__class_hash"
 
     @classmethod
     def _add_global_parameter(cls, openmm_object, parameter_name, parameter_value):
@@ -958,7 +1025,9 @@ class RestorableOpenMMObject(object):
         for parameter_idx in range(force.getNumGlobalParameters()):
             if force.getGlobalParameterName(parameter_idx) == parameter_name:
                 return force.getGlobalParameterDefaultValue(parameter_idx)
-        raise KeyError('No parameter called {} in force {}'.format(parameter_name, force))
+        raise KeyError(
+            "No parameter called {} in force {}".format(parameter_name, force)
+        )
 
     # -------------------------------------------------------------------------
     # Copy and serialization utilities
@@ -997,7 +1066,7 @@ class RestorableOpenMMObject(object):
 
         # Copy attributes. SWIG objects have only 1 attribute (this),
         # everything else is part of the implementation.
-        attributes_self = {k: v for k, v in self.__dict__.items() if k != 'this'}
+        attributes_self = {k: v for k, v in self.__dict__.items() if k != "this"}
         copied_self.__dict__.update(copy.deepcopy(attributes_self))
 
         return copied_self
@@ -1014,7 +1083,9 @@ class RestorableOpenMMObject(object):
         elif isinstance(openmm_object, openmm.CustomIntegrator):
             return False
         else:
-            raise TypeError('Object of type {} is not supported.'.format(type(openmm_object)))
+            raise TypeError(
+                "Object of type {} is not supported.".format(type(openmm_object))
+            )
 
     @staticmethod
     def _compute_class_hash(openmm_class):
@@ -1032,6 +1103,7 @@ class RestorableOpenMMObject(object):
         return float(zlib.adler32(openmm_class.__name__.encode()))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

@@ -5,8 +5,7 @@ Generate molecules for test system using OpenEye tools.
 
 """
 
-molecules = { 'BEN' : 'benzene',
-              'TOL' : 'toluene' }
+molecules = {"BEN": "benzene", "TOL": "toluene"}
 
 from openeye import oechem
 from openeye import oeomega
@@ -38,7 +37,7 @@ for resname in molecules:
     oequacpac.OEAssignPartialCharges(molecule, oequacpac.OECharges_AM1BCCSym)
 
     # Write molecule.
-    filename = '%s.tripos.mol2' % name
+    filename = "%s.tripos.mol2" % name
     print(filename)
     ofs = oechem.oemolostream()
     ofs.open(filename)
@@ -46,11 +45,10 @@ for resname in molecules:
     ofs.close()
 
     # Replace <0> with resname.
-    infile = open(filename, 'r')
+    infile = open(filename, "r")
     lines = infile.readlines()
     infile.close()
-    newlines = [line.replace('<0>', resname) for line in lines]
-    outfile = open(filename, 'w')
+    newlines = [line.replace("<0>", resname) for line in lines]
+    outfile = open(filename, "w")
     outfile.writelines(newlines)
     outfile.close()
-

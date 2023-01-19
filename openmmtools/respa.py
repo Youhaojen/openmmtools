@@ -36,6 +36,7 @@ try:
 except ImportError:  # OpenMM < 7.6
     from simtk.openmm import CustomIntegrator
 
+
 class MTSIntegrator(CustomIntegrator):
     """MTSIntegrator implements the rRESPA multiple time step integration algorithm.
 
@@ -73,25 +74,31 @@ class MTSIntegrator(CustomIntegrator):
         groups = sorted(groups, key=lambda x: x[1])
         CustomIntegrator.__init__(self, dt)
         self.addPerDofVariable("x1", 0)
-        self.addUpdateContextState();
+        self.addUpdateContextState()
         self._createSubsteps(1, groups)
-        self.addConstrainVelocities();
+        self.addConstrainVelocities()
 
     def _createSubsteps(self, parentSubsteps, groups):
         group, substeps = groups[0]
-        stepsPerParentStep = substeps/parentSubsteps
+        stepsPerParentStep = substeps / parentSubsteps
         if stepsPerParentStep < 1 or stepsPerParentStep != int(stepsPerParentStep):
-            raise ValueError("The number for substeps for each group must be a multiple of the number for the previous group")
-        stepsPerParentStep = int(stepsPerParentStep) # needed for Python 3.x
+            raise ValueError(
+                "The number for substeps for each group must be a multiple of the number for the previous group"
+            )
+        stepsPerParentStep = int(stepsPerParentStep)  # needed for Python 3.x
         if group < 0 or group > 31:
             raise ValueError("Force group must be between 0 and 31")
         for i in range(stepsPerParentStep):
-            self.addComputePerDof("v", "v+0.5*(dt/"+str(substeps)+")*f"+str(group)+"/m")
+            self.addComputePerDof(
+                "v", "v+0.5*(dt/" + str(substeps) + ")*f" + str(group) + "/m"
+            )
             if len(groups) == 1:
                 self.addComputePerDof("x1", "x")
-                self.addComputePerDof("x", "x+(dt/"+str(substeps)+")*v")
-                self.addConstrainPositions();
-                self.addComputePerDof("v", "(x-x1)/(dt/"+str(substeps)+")");
+                self.addComputePerDof("x", "x+(dt/" + str(substeps) + ")*v")
+                self.addConstrainPositions()
+                self.addComputePerDof("v", "(x-x1)/(dt/" + str(substeps) + ")")
             else:
                 self._createSubsteps(substeps, groups[1:])
-            self.addComputePerDof("v", "v+0.5*(dt/"+str(substeps)+")*f"+str(group)+"/m")
+            self.addComputePerDof(
+                "v", "v+0.5*(dt/" + str(substeps) + ")*f" + str(group) + "/m"
+            )

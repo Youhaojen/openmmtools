@@ -63,8 +63,14 @@ This code is licensed under the latest available version of the MIT License.
 
 from openmmtools.multistate.multistatesampler import MultiStateSampler
 from openmmtools.multistate.multistatereporter import MultiStateReporter
-from openmmtools.multistate.replicaexchange import ReplicaExchangeSampler, ReplicaExchangeAnalyzer
-from openmmtools.multistate.paralleltempering import ParallelTemperingSampler, ParallelTemperingAnalyzer
+from openmmtools.multistate.replicaexchange import (
+    ReplicaExchangeSampler,
+    ReplicaExchangeAnalyzer,
+)
+from openmmtools.multistate.paralleltempering import (
+    ParallelTemperingSampler,
+    ParallelTemperingAnalyzer,
+)
 from openmmtools.multistate.sams import SAMSSampler, SAMSAnalyzer
 from openmmtools.multistate.multistateanalyzer import *
 from openmmtools.multistate.utils import *

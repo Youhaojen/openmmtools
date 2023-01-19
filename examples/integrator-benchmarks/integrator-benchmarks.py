@@ -9,7 +9,7 @@ try:
     import openmm
     from openmm import unit
     from openmm import app
-except ImportError: # OpenMM < 7.6
+except ImportError:  # OpenMM < 7.6
     from simtk import openmm
     from simtk import unit
     from simtk.openmm import app
@@ -19,17 +19,22 @@ import numpy as np
 import time
 
 # Test systems to benchmark
-testsystems_to_benchmark = ['LennardJonesFluid']
+testsystems_to_benchmark = ["LennardJonesFluid"]
 
 # Integrators to benchmark
-integrators_to_benchmark = ['VerletIntegrator', 'VelocityVerletIntegrator', 'VVVRIntegrator', 'GHMCIntegrator']
+integrators_to_benchmark = [
+    "VerletIntegrator",
+    "VelocityVerletIntegrator",
+    "VVVRIntegrator",
+    "GHMCIntegrator",
+]
 
 # Parameters
 timestep = 1.0 * unit.femtoseconds
 collision_rate = 91.0 / unit.picoseconds
 temperature = 300.0 * unit.kelvin
-ntrials = 10 # number of timing trials
-nsteps = 200 # number of steps per timing trial
+ntrials = 10  # number of timing trials
+nsteps = 200  # number of steps per timing trial
 
 # Cycle through test systems.
 for testsystem_name in testsystems_to_benchmark:
@@ -48,14 +53,22 @@ for testsystem_name in testsystems_to_benchmark:
 
     # Benchmark integrators.
     for integrator_name in integrators_to_benchmark:
-        if integrator_name == 'VerletIntegrator':
+        if integrator_name == "VerletIntegrator":
             integrator = openmm.VerletIntegrator(timestep)
-        elif integrator_name == 'VelocityVerletIntegrator':
+        elif integrator_name == "VelocityVerletIntegrator":
             integrator = integrators.VelocityVerletIntegrator(timestep)
-        elif integrator_name == 'VVVRIntegrator':
-            integrator = integrators.VVVRIntegrator(temperature=temperature, collision_rate=collision_rate, timestep=timestep)
-        elif integrator_name == 'GHMCIntegrator':
-            integrator = integrators.GHMCIntegrator(temperature=temperature, collision_rate=collision_rate, timestep=timestep)
+        elif integrator_name == "VVVRIntegrator":
+            integrator = integrators.VVVRIntegrator(
+                temperature=temperature,
+                collision_rate=collision_rate,
+                timestep=timestep,
+            )
+        elif integrator_name == "GHMCIntegrator":
+            integrator = integrators.GHMCIntegrator(
+                temperature=temperature,
+                collision_rate=collision_rate,
+                timestep=timestep,
+            )
 
         # Create system.
         context = openmm.Context(testsystem.system, integrator)
@@ -71,7 +84,10 @@ for testsystem_name in testsystems_to_benchmark:
             integrator.step(nsteps)
             final_time = time.time()
             elapsed_time[trial] = final_time - initial_time
-        print("%32s : mean %8.3f ms / std %8.3f ms" % (integrator_name, elapsed_time.mean(), elapsed_time.std()))
+        print(
+            "%32s : mean %8.3f ms / std %8.3f ms"
+            % (integrator_name, elapsed_time.mean(), elapsed_time.std())
+        )
 
         # Clean up.
         del context, integrator

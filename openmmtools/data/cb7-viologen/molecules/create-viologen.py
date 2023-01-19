@@ -7,8 +7,8 @@ from openeye.oechem import *
 from openeye.oeomega import *
 from openeye.oequacpac import *
 
-smiles = "OC(=O)CCCCC[n+](cc1)ccc1-c2cc[n+](cc2)CCCCCC(=O)O" # substituted viologen
-output_filename = 'viologen.tripos.mol2'
+smiles = "OC(=O)CCCCC[n+](cc1)ccc1-c2cc[n+](cc2)CCCCCC(=O)O"  # substituted viologen
+output_filename = "viologen.tripos.mol2"
 
 
 def assign_am1bcc_charges(mol):
@@ -45,14 +45,17 @@ def assign_am1bcc_charges(mol):
             sumFCharge += atm.GetFormalCharge()
             absFCharge += abs(atm.GetFormalCharge())
             sumPCharge += atm.GetPartialCharge()
-        OEThrow.Info("%s: %d formal charges give total charge %d ; Sum of Partial Charges %5.4f"
-                     % (mol.GetTitle(), absFCharge, sumFCharge, sumPCharge))
+        OEThrow.Info(
+            "%s: %d formal charges give total charge %d ; Sum of Partial Charges %5.4f"
+            % (mol.GetTitle(), absFCharge, sumFCharge, sumPCharge)
+        )
 
         return charged_mol
 
     else:
-        OEThrow.Warning("Failed to generate conformation(s) for molecule %s" % mol.GetTitle())
-
+        OEThrow.Warning(
+            "Failed to generate conformation(s) for molecule %s" % mol.GetTitle()
+        )
 
 
 ##
@@ -76,7 +79,7 @@ OEAssignAromaticFlags(mol, OEAroModelOpenEye)
 OEAddExplicitHydrogens(mol)
 
 # Set title
-mol.SetTitle('protonated viologen')
+mol.SetTitle("protonated viologen")
 
 # Assign charges.
 print("Assigning canonical AM1-BCC charges...")

@@ -18,6 +18,7 @@ import copy
 
 import numpy as np
 import mdtraj
+
 try:
     import openmm
     from openmm import unit
@@ -31,8 +32,10 @@ from openmmtools import forces
 # FACTORY FUNCTIONS
 # =============================================================================
 
-def replace_reaction_field(reference_system, switch_width=1.0*unit.angstrom,
-                           return_copy=True, shifted=False):
+
+def replace_reaction_field(
+    reference_system, switch_width=1.0 * unit.angstrom, return_copy=True, shifted=False
+):
     """Return a system converted to use a switched reaction-field electrostatics using :class:`openmmtools.forces.UnshiftedReactionField`.
 
     This will add an `UnshiftedReactionFieldForce` or `SwitchedReactionFieldForce`
@@ -68,20 +71,26 @@ def replace_reaction_field(reference_system, switch_width=1.0*unit.angstrom,
         system = reference_system
 
     if shifted:
-        force_constructor = getattr(forces, 'SwitchedReactionFieldForce')
+        force_constructor = getattr(forces, "SwitchedReactionFieldForce")
     else:
-        force_constructor = getattr(forces, 'UnshiftedReactionFieldForce')
+        force_constructor = getattr(forces, "UnshiftedReactionFieldForce")
 
     # Add an reaction field for each CutoffPeriodic NonbondedForce.
     for reference_force in forces.find_forces(system, openmm.NonbondedForce).values():
         if reference_force.getNonbondedMethod() == openmm.NonbondedForce.CutoffPeriodic:
-            reaction_field_force = force_constructor.from_nonbonded_force(reference_force, switch_width=switch_width)
+            reaction_field_force = force_constructor.from_nonbonded_force(
+                reference_force, switch_width=switch_width
+            )
             system.addForce(reaction_field_force)
 
             # Remove particle electrostatics from reference force, but leave exceptions.
             for particle_index in range(reference_force.getNumParticles()):
-                charge, sigma, epsilon = reference_force.getParticleParameters(particle_index)
-                reference_force.setParticleParameters(particle_index, abs(0.0*charge), sigma, epsilon)
+                charge, sigma, epsilon = reference_force.getParticleParameters(
+                    particle_index
+                )
+                reference_force.setParticleParameters(
+                    particle_index, abs(0.0 * charge), sigma, epsilon
+                )
 
     return system
 
@@ -90,7 +99,10 @@ def replace_reaction_field(reference_system, switch_width=1.0*unit.angstrom,
 # RESTRAIN ATOMS
 # =============================================================================
 
-def restrain_atoms_by_dsl(thermodynamic_state, sampler_state, topology, atoms_dsl, **kwargs):
+
+def restrain_atoms_by_dsl(
+    thermodynamic_state, sampler_state, topology, atoms_dsl, **kwargs
+):
     # Make sure the topology is an MDTraj topology.
     if isinstance(topology, mdtraj.Topology):
         mdtraj_topology = topology
@@ -102,7 +114,9 @@ def restrain_atoms_by_dsl(thermodynamic_state, sampler_state, topology, atoms_ds
     restrain_atoms(thermodynamic_state, sampler_state, restrained_atoms, **kwargs)
 
 
-def restrain_atoms(thermodynamic_state, sampler_state, restrained_atoms, sigma=3.0*unit.angstroms):
+def restrain_atoms(
+    thermodynamic_state, sampler_state, restrained_atoms, sigma=3.0 * unit.angstroms
+):
     """Apply a soft harmonic restraint to the given atoms.
 
     This modifies the ``ThermodynamicState`` object.
@@ -127,14 +141,14 @@ def restrain_atoms(thermodynamic_state, sampler_state, restrained_atoms, sigma=3
 
     # Check that there are atoms to restrain.
     if len(restrained_atoms) == 0:
-        raise ValueError('No atoms to restrain.')
+        raise ValueError("No atoms to restrain.")
 
     # We need to translate the restrained molecule to the origin
     # to avoid MonteCarloBarostat rejections (see openmm#1854).
     if thermodynamic_state.pressure is not None:
         # First, determine all the molecule atoms. Reference platform is the cheapest to allocate?
-        reference_platform = openmm.Platform.getPlatformByName('Reference')
-        integrator = openmm.VerletIntegrator(1.0*unit.femtosecond)
+        reference_platform = openmm.Platform.getPlatformByName("Reference")
+        integrator = openmm.VerletIntegrator(1.0 * unit.femtosecond)
         context = openmm.Context(system, integrator, reference_platform)
         molecules_atoms = context.getMolecules()
         del context, integrator
@@ -149,28 +163,39 @@ def restrain_atoms(thermodynamic_state, sampler_state, restrained_atoms, sigma=3
                 restrained_molecule_atoms = list(molecule_atoms)
                 break
         if restrained_molecule_atoms is None:
-            raise ValueError('Cannot match the restrained atoms to any molecule. Restraining '
-                             'two molecules is not supported when using a MonteCarloBarostat.')
+            raise ValueError(
+                "Cannot match the restrained atoms to any molecule. Restraining "
+                "two molecules is not supported when using a MonteCarloBarostat."
+            )
 
         # Translate system so that the center of geometry is in
         # the origin to reduce the barostat rejections.
         distance_unit = sampler_state.positions.unit
-        centroid = np.mean(sampler_state.positions[restrained_molecule_atoms,:] / distance_unit, axis=0)
+        centroid = np.mean(
+            sampler_state.positions[restrained_molecule_atoms, :] / distance_unit,
+            axis=0,
+        )
         sampler_state.positions -= centroid * distance_unit
 
     # Create a CustomExternalForce to restrain all atoms.
     if thermodynamic_state.is_periodic:
-        energy_expression = '(K/2)*periodicdistance(x, y, z, x0, y0, z0)^2' # periodic distance
+        energy_expression = (
+            "(K/2)*periodicdistance(x, y, z, x0, y0, z0)^2"  # periodic distance
+        )
     else:
-        energy_expression = '(K/2)*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)' # non-periodic distance
+        energy_expression = (
+            "(K/2)*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)"  # non-periodic distance
+        )
     restraint_force = openmm.CustomExternalForce(energy_expression)
     # Adding the spring constant as a global parameter allows us to turn it off if desired
-    restraint_force.addGlobalParameter('K', K)
-    restraint_force.addPerParticleParameter('x0')
-    restraint_force.addPerParticleParameter('y0')
-    restraint_force.addPerParticleParameter('z0')
+    restraint_force.addGlobalParameter("K", K)
+    restraint_force.addPerParticleParameter("x0")
+    restraint_force.addPerParticleParameter("y0")
+    restraint_force.addPerParticleParameter("z0")
     for index in restrained_atoms:
-        parameters = sampler_state.positions[index,:].value_in_unit_system(unit.md_unit_system)
+        parameters = sampler_state.positions[index, :].value_in_unit_system(
+            unit.md_unit_system
+        )
         restraint_force.addParticle(index, parameters)
 
     # Update thermodynamic state.
@@ -178,6 +203,7 @@ def restrain_atoms(thermodynamic_state, sampler_state, restrained_atoms, sigma=3
     thermodynamic_state.system = system
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import doctest
+
     doctest.testmod()
