@@ -114,7 +114,7 @@ class RepexConstructor:
         initial_positions: unit.Quantity,
         n_states: int,
         temperature: unit.Quantity,
-        intervals_per_lambda_window: int = 100,
+        intervals_per_lambda_window: int = 10,
         restart: bool = False,
         storage_kwargs: Dict = {
             "storage": "repex.nc",
@@ -188,7 +188,7 @@ class RepexConstructor:
                 storage_kwargs=self._storage_kwargs,
                 setup_equilibration_intervals=self._intervals_per_lambda_window
                 * self._n_states,
-                steps_per_setup_equilibration_interval=10,
+                steps_per_setup_equilibration_interval=100,
                 **self._extra_kwargs,
             )
         return _sampler

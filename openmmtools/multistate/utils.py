@@ -425,7 +425,7 @@ class NNPCompatibilityMixin(object):
             idx * interval_stepper for idx in range(len(lambda_schedule + 1))
         ]
         subinterval_matching_idx = np.round(
-            np.linspace(0, lambda_subinterval_schedule.shape[0] - 1, n_states)
+            np.linspace(0, lambda_subinterval_schedule.shape[0], n_states)
         ).astype(int)
 
         print(subinterval_matching_idx)
@@ -447,17 +447,6 @@ class NNPCompatibilityMixin(object):
             )  # step the integrator
             init_sampler_state.update_from_context(eq_context)  # update sampler_state
 
-            # TODO: this does not reliably find the endstates
-            # alternative, if the endstate is the index * multiplier:
-            # matchers = any(i * interval_stepper == idx for i in lambda_schedule)
-            # print(matchers)
-
-            # matchers = [np.isclose(lambda_subinterval, i, rtol=1e-3) for i in lambda_schedule]
-            # this is the pure ml state - why are we not sampling from this? are we somehow handling this differently?
-            # ml_endstate_matcher = np.isclose(lambda_subinterval, 1.) # this is the last state, and we want to make it unsampled
-            # if ml_endstate_matcher:
-            #     unsampled_thermostate_list.append(compound_thermostate_copy)
-            # elif any(matchers): # if the lambda subinterval is in the lambda protocol, add thermostate and sampler state
             if idx in subinterval_matching_idx:
                 print("Adding state", lambda_subinterval, "matching index", idx)
                 thermostate_list.append(compound_thermostate_copy)
