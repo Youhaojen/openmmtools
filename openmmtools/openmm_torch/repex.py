@@ -99,6 +99,7 @@ class RepexConstructor():
                  initial_positions: unit.Quantity,
                  n_states : int,
                  temperature : unit.Quantity,
+                 intervals_per_lambda_window: int = 100,
                  restart: bool = False,
                  storage_kwargs: Dict={'storage': 'repex.nc', 
                                        'checkpoint_interval': 10,
@@ -121,6 +122,7 @@ class RepexConstructor():
         self._replica_exchange_sampler_kwargs = replica_exchange_sampler_kwargs
         self._n_states = n_states
         self.restart = restart
+        self._intervals_per_lambda_window = intervals_per_lambda_window
         self._extra_kwargs = kwargs
         
         # initial positions
@@ -139,10 +141,6 @@ class RepexConstructor():
             logging.info(f"Removing storage file {self._storage_kwargs['storage']}")
             os.remove(self._storage_kwargs["storage"])
         if os.path.isfile(self._storage_kwargs["storage"]) and self.restart:
-            # TODO: remove this when this issue is fixed https://github.com/choderalab/openmmtools/issues/624
-            for key in os.environ:
-                print(key)
-
             # repex.nc file exists, attempt to restart from this file
             logging.info(f"Restarting simulation from file {self._storage_kwargs['storage']}")
             # print(NNPRepexSampler.read_status(self._storage_kwargs["storage"]))
@@ -157,7 +155,7 @@ class RepexConstructor():
                         init_positions = self._initial_positions, 
                         temperature = self._temperature, 
                         storage_kwargs = self._storage_kwargs,
-                        setup_equilibration_intervals=10,
-                        steps_per_setup_equilibration_interval=100,
+                        setup_equilibration_intervals=self._intervals_per_lambda_window*self._n_states,
+                        steps_per_setup_equilibration_interval=10,
                         **self._extra_kwargs)  
         return _sampler

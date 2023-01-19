@@ -348,6 +348,7 @@ class NNPCompatibilityMixin(object):
             assert setup_equilibration_intervals % n_states == 0, f"""
               the number of `n_states` must be divisible into `setup_equilibration_intervals`"""
             interval_stepper = setup_equilibration_intervals // n_states
+
         else:
             raise Exception(f"At present, we require setup equilibration interval work.")
         
@@ -370,24 +371,38 @@ class NNPCompatibilityMixin(object):
 
         logger.info(f"making lambda states...")
         lambda_subinterval_schedule = np.linspace(0., 1., setup_equilibration_intervals)
-        print(f"running thermolist population...")
-        for lambda_subinterval in lambda_subinterval_schedule:
-            print(f"running lambda subinterval {lambda_subinterval}.")
+        # now compute the indices of the subinterval schedule that will correspond to a state in the lambda schedule
+        subinterval_matching_idx = [idx * interval_stepper for idx in range(len(lambda_schedule))]
+        print(subinterval_matching_idx)
+        logger.info(f"running thermolist population...")
+        # each replica sweeps over the linspace of lambda values, but does not stop when it gets to the correct equilibrated value - apparently each MPI rank needs all of the separately equilibrated replicas as its own copy... seems wasteful to me
+        for idx, lambda_subinterval in enumerate(lambda_subinterval_schedule):
+            logger.info(f"running lambda subinterval {lambda_subinterval}.")
             compound_thermostate_copy = deepcopy(compound_thermostate) # copy thermostate
             compound_thermostate_copy.set_alchemical_parameters(lambda_subinterval, lambda_protocol) # update thermostate
             compound_thermostate_copy.apply_to_context(eq_context) # apply new alch val to context
             eq_integrator.step(steps_per_setup_equilibration_interval) # step the integrator
             init_sampler_state.update_from_context(eq_context) # update sampler_state
 
-            matchers = [np.isclose(lambda_subinterval, i) for i in lambda_schedule]
+            # TODO: this does not reliably find the endstates
+            # alternative, if the endstate is the index * multiplier: 
+            # matchers = any(i * interval_stepper == idx for i in lambda_schedule)
+            # print(matchers)
+            
+
+            # matchers = [np.isclose(lambda_subinterval, i, rtol=1e-3) for i in lambda_schedule]
+            # this is the pure ml state - why are we not sampling from this? are we somehow handling this differently? 
             ml_endstate_matcher = np.isclose(lambda_subinterval, 1.) # this is the last state, and we want to make it unsampled
             if ml_endstate_matcher:
                 unsampled_thermostate_list.append(compound_thermostate_copy)
-            elif any(matchers): # if the lambda subinterval is in the lambda protocol, add thermostate and sampler state
-                print(f"this subinterval matched; adding to state...")
+            # elif any(matchers): # if the lambda subinterval is in the lambda protocol, add thermostate and sampler state
+            elif idx in subinterval_matching_idx:
+                print("Adding state", lambda_subinterval, "matching index", idx)
                 thermostate_list.append(compound_thermostate_copy)
                 sampler_state_list.append(deepcopy(init_sampler_state))
 
+        # why is only a singular state making it into the sampler state list here? 
+        logger.info(sampler_state_list)
         # put context, integrator into garbage collector
         del eq_context
         del eq_integrator

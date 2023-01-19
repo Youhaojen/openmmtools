@@ -264,9 +264,11 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         # Perform swap attempts according to requested scheme.
         with utils.time_it('Mixing of replicas'):
             if self.replica_mixing_scheme == 'swap-neighbors':
+                logger.info("Mixing neighbouring replicas")
                 self._mix_neighboring_replicas()
             elif self.replica_mixing_scheme == 'swap-all':
                 nswap_attempts = self.n_replicas**3
+                logger.info(f"swap attempts {nswap_attempts}")
                 # Try to use numba-accelerated mixing code if possible,
                 # otherwise fall back to Python-accelerated code.
                 try:
@@ -275,6 +277,7 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
                         self._replica_thermodynamic_states, self._energy_thermodynamic_states,
                         self._n_accepted_matrix, self._n_proposed_matrix
                         )
+                    logger.info("Mixing with numba-accelerated method")
                 except (ValueError, ImportError) as e:
                     logger.warning(str(e))
                     self._mix_all_replicas(nswap_attempts)
