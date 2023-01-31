@@ -73,6 +73,7 @@ setup(
         "console_scripts": [
             "test-openmm-platforms = openmmtools.scripts.test_openmm_platforms:main",
             "benchmark-alchemy = openmmtools.tests.test_alchemy:benchmark_alchemy_from_pdb",
+            "mace-md = openmmtools.scripts.mace_md:main",
         ]
     },
 )

@@ -293,7 +293,6 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
                         self._n_accepted_matrix,
                         self._n_proposed_matrix,
                     )
-                    logger.info("Mixing with numba-accelerated method")
                 except (ValueError, ImportError) as e:
                     logger.warning(str(e))
                     self._mix_all_replicas(nswap_attempts)
@@ -344,6 +343,7 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         _n_proposed_matrix : array-like of float of shape [n_replicas, n_replicas]
             _n_accepted_matrix[from_state,to_state] is the number of proposed swaps
         """
+        raise ValueError
         for swap_attempt in range(nswap_attempts):
 
             # Choose random replicas uniformly to attempt to swap.
@@ -431,6 +431,9 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
 
         # Accept or reject.
         if log_p_accept >= 0.0 or np.random.rand() < math.exp(log_p_accept):
+            logger.info(f"Energy values for the swap: replicas {replica_i}, {replica_j}")
+            logger.info(f"E_ii {energy_ii}, E_jj {energy_jj}, E_ij {energy_ij}, E_ji {energy_ji}")
+            logger.info(f"LogP_accept {log_p_accept}")
             # Swap states in replica slots i and j.
             self._replica_thermodynamic_states[replica_i] = thermodynamic_state_j
             self._replica_thermodynamic_states[replica_j] = thermodynamic_state_i

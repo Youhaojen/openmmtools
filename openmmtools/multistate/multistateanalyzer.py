@@ -1668,9 +1668,6 @@ class MultiStateSamplerAnalyzer(PhaseAnalyzer):
         last_sampled_state = n_total_states - first_sampled_state
 
         # Cast the sampled energy matrix from kln' to ln form.
-        print(energy_matrix.shape)
-        print(sampled_energy_matrix.shape)
-        print(self.reformat_energies_for_mbar(sampled_energy_matrix).shape)
         energy_matrix[
             first_sampled_state:last_sampled_state, :
         ] = self.reformat_energies_for_mbar(sampled_energy_matrix)

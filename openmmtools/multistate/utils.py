@@ -27,6 +27,9 @@ This code is licensed under the latest available version of the MIT License.
 import logging
 import warnings
 import numpy as np
+import os
+from openmm.app.pdbfile import PDBFile
+from openmm import System
 
 from pymbar import timeseries  # for statistical inefficiency analysis
 
@@ -351,7 +354,17 @@ class NNPCompatibilityMixin(object):
         context_cache = cache.ContextCache(
             capacity=None, time_to_live=None, platform=platform
         )
+        lambda_schedule = np.linspace(0., 1., n_states)
 
+
+        platform = get_fastest_platform(minimum_precision="mixed")
+        context_cache = cache.ContextCache(
+            capacity=None, time_to_live=None, platform=platform
+        )
+        if equilibration_protocol not in ["minimise", "gentle"]:
+            raise ValueError(f"equilibration protocol {equilibration_protocol} not recognised")
+        
+        logger.info(f"Using {equilibration_protocol} equilibration protocol")
         lambda_zero_alchemical_state = NNPAlchemicalState.from_system(mixed_system)
         thermostate = ThermodynamicState(mixed_system, temperature=temperature)
         compound_thermostate = CompoundThermodynamicState(
@@ -366,25 +379,6 @@ class NNPCompatibilityMixin(object):
                                         but the number of replicas was given as {n_replicas}. 
                                         We currently only support equal states and replicas"""
             )
-        if lambda_schedule is None:
-            lambda_schedule = np.linspace(0.0, 1.0, n_states)
-        else:
-            assert len(lambda_schedule) == n_states
-            assert np.isclose(lambda_schedule[0], 0.0)
-            assert np.isclose(lambda_schedule[-1], 1.0)
-
-        if setup_equilibration_intervals is not None:
-            # attempt to gently equilibrate
-            assert (
-                setup_equilibration_intervals % n_states == 0
-            ), f"""
-              the number of `n_states` must be divisible into `setup_equilibration_intervals`"""
-            interval_stepper = setup_equilibration_intervals // n_states
-
-        else:
-            raise Exception(
-                f"At present, we require setup equilibration interval work."
-            )
 
         if lambda_protocol is None:
             from openmmtools.alchemy import NNPProtocol
@@ -395,68 +389,101 @@ class NNPCompatibilityMixin(object):
                 f"""`lambda_protocol` is currently placeholding; only default `None` 
                                       is allowed until the `lambda_protocol` class is appropriately generalized"""
             )
-
         init_sampler_state = SamplerState(
             init_positions, box_vectors=mixed_system.getDefaultPeriodicBoxVectors()
         )
+        if equilibration_protocol == "gentle":
+            if setup_equilibration_intervals is not None:
+            # attempt to gently equilibrate
+                assert (
+                    setup_equilibration_intervals % n_states == 0
+                ), f"""
+                the number of `n_states` must be divisible into `setup_equilibration_intervals`"""
+                interval_stepper = setup_equilibration_intervals // n_states
 
-        # first, a context, integrator to equilibrate and minimize state 0
-        eq_context, eq_integrator = context_cache.get_context(
-            deepcopy(compound_thermostate),
-            openmm.LangevinMiddleIntegrator(temperature, 1.0, 0.001),
-        )
-        init_sampler_state.apply_to_context(
-            eq_context
-        )  # don't forget to set particle positions, bvs
-        openmm.LocalEnergyMinimizer.minimize(eq_context)  # don't forget to minimize
-        init_sampler_state.update_from_context(
-            eq_context
-        )  # update from context for good measure
-        eq_context.setVelocitiesToTemperature(
-            temperature
-        )  # set velocities at appropriate temperature
+            else:
+                raise Exception(
+                    f"At present, we require setup equilibration interval work."
+                )
+            # first, a context, integrator to equilibrate and minimize state 0
+            eq_context, eq_integrator = context_cache.get_context(
+                deepcopy(compound_thermostate),
+                openmm.LangevinMiddleIntegrator(temperature, 1.0, 0.001),
+            )
 
-        logger.info(f"making lambda states...")
-        lambda_subinterval_schedule = np.linspace(
-            0.0, 1.0, setup_equilibration_intervals
-        )
-        # now compute the indices of the subinterval schedule that will correspond to a state in the lambda schedule
-        subinterval_matching_idx = [
-            idx * interval_stepper for idx in range(len(lambda_schedule + 1))
-        ]
-        subinterval_matching_idx = np.round(
-            np.linspace(0, lambda_subinterval_schedule.shape[0], n_states)
-        ).astype(int)
-
-        print(subinterval_matching_idx)
-        logger.info(f"running thermolist population...")
-        # each replica sweeps over the linspace of lambda values, but does not stop when it gets to the correct equilibrated value - apparently each MPI rank needs all of the separately equilibrated replicas as its own copy... seems wasteful to me
-        for idx, lambda_subinterval in enumerate(lambda_subinterval_schedule):
-            logger.info(f"running lambda subinterval {lambda_subinterval}.")
-            compound_thermostate_copy = deepcopy(
-                compound_thermostate
-            )  # copy thermostate
-            compound_thermostate_copy.set_alchemical_parameters(
-                lambda_subinterval, lambda_protocol
-            )  # update thermostate
-            compound_thermostate_copy.apply_to_context(
+            logger.info("setting lambda state to 0...")
+            eq_context.setParameter("lambda_interpolate", 0.0)
+            init_sampler_state.apply_to_context(
                 eq_context
-            )  # apply new alch val to context
-            eq_integrator.step(
-                steps_per_setup_equilibration_interval
-            )  # step the integrator
-            init_sampler_state.update_from_context(eq_context)  # update sampler_state
+            )  
+            logger.info("Minimising initial state")
+            openmm.LocalEnergyMinimizer.minimize(eq_context)  # don't forget to minimize
+            # eq_context.setVelocitiesToTemperature(temperature)
+            # logger.info("Propagating state zero for 5000 steps...")
+            # eq_integrator.step(10000)
+            logger.info("...done")
+            # update from context for good measure
+            init_sampler_state.update_from_context(eq_context)
+            # set velocities at appropriate temperature
 
-            if idx in subinterval_matching_idx:
-                print("Adding state", lambda_subinterval, "matching index", idx)
+            logger.info(f"making lambda states...")
+            lambda_subinterval_schedule = np.linspace(
+                0.0, 1.0, setup_equilibration_intervals
+            )
+            print(lambda_subinterval_schedule)
+            print(n_states)
+            # now compute the indices of the subinterval schedule that will correspond to a state in the lambda schedule
+            subinterval_matching_idx = np.round(
+                np.linspace(0, lambda_subinterval_schedule.shape[0]-1, n_states)
+            ).astype(int)
+            logging.info(f"Will extract indices {subinterval_matching_idx}")
+
+            logger.info(f"running thermolist population...")
+
+
+            for idx, lambda_subinterval in enumerate(lambda_subinterval_schedule):
+                logger.info(f"running lambda subinterval {lambda_subinterval}.")
+                # copy thermostate
+                compound_thermostate_copy = deepcopy(compound_thermostate)
+                # update thermostate
+                compound_thermostate_copy.set_alchemical_parameters(
+                    lambda_subinterval, lambda_protocol
+                )
+
+                compound_thermostate_copy.apply_to_context(eq_context)
+                logger.info(f"Alchemical parameter {eq_context.getParameter('lambda_interpolate')}")
+                # step the integrator
+                    # openmm.LocalEnergyMinimizer.minimize(eq_context)
+                eq_integrator.step(steps_per_setup_equilibration_interval)
+                    # this seems to be stochastic, simply run the equilibration again
+                #     nan_counter += 1
+                #     # reset context
+                #     logger.info("Resetting context...")
+                #     eq_context.reinitialize()
+                #     logger.info("...done")
+                #     logger.info("Minimising...")
+                #     openmm.LocalEnergyMinimizer.minimize(eq_context)
+                #     eq_integrator.step(steps_per_setup_equilibration_interval)
+                # init_sampler_state.update_from_context(eq_context)  # update sampler_state
+
+                if idx in subinterval_matching_idx:
+                    print("Adding state", lambda_subinterval, "matching index", idx)
+                    thermostate_list.append(compound_thermostate_copy)
+                    sampler_state_list.append(deepcopy(init_sampler_state))
+
+            # put context, integrator into garbage collector
+            del eq_context
+            del eq_integrator
+
+        elif equilibration_protocol == "minimise":
+            for lambda_val in lambda_schedule:
+                compound_thermostate_copy = deepcopy(compound_thermostate)
+                compound_thermostate_copy.set_alchemical_parameters(lambda_val, lambda_protocol)
                 thermostate_list.append(compound_thermostate_copy)
                 sampler_state_list.append(deepcopy(init_sampler_state))
 
-        # why is only a singular state making it into the sampler state list here?
-        logger.info(sampler_state_list)
-        # put context, integrator into garbage collector
-        del eq_context
-        del eq_integrator
+        
+        
         reporter = MultiStateReporter(**storage_kwargs)
         self.create(
             thermodynamic_states=thermostate_list,

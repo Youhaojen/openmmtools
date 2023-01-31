@@ -1,4 +1,3 @@
-"""utilities for building and running MM->NNP potential replica exchange free energy calculations"""
 import logging
 import os
 from openmmml.mlpotential import MLPotential
@@ -10,10 +9,13 @@ from copy import deepcopy
 from openmmtools import cache
 from openmmtools import mcmc
 from openmmtools.mcmc import LangevinSplittingDynamicsMove
-from openmmtools.multistate import replicaexchange
+from openmmtools.multistate import replicaexchange, multistatesampler
 from openmmtools.multistate.utils import NNPCompatibilityMixin
 from openmmtools.alchemy import NNPAlchemicalState
 from typing import Dict, Any, Iterable, Union, Optional, List
+import os
+import logging
+
 
 
 def deserialize_xml(filename):
@@ -24,6 +26,10 @@ def deserialize_xml(filename):
 
 
 class NNPRepexSampler(NNPCompatibilityMixin, replicaexchange.ReplicaExchangeSampler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class NNPMultiStateSampler(NNPCompatibilityMixin, multistatesampler.MultiStateSampler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -98,10 +104,6 @@ class MixedSystemConstructor:
             **self._createMixedSystem_kwargs,
         )
 
-    @property
-    def decoupled_system(self):
-        return self._nnp_potential.createDecoupledSystem(self.mixed_system)
-
 
 class RepexConstructor:
     """
@@ -114,7 +116,9 @@ class RepexConstructor:
         initial_positions: unit.Quantity,
         n_states: int,
         temperature: unit.Quantity,
-        intervals_per_lambda_window: int = 10,
+        intervals_per_lambda_window: int,
+        steps_per_equilibration_interval: int,
+        equilibration_protocol: str,
         restart: bool = False,
         storage_kwargs: Dict = {
             "storage": "repex.nc",
@@ -128,7 +132,7 @@ class RepexConstructor:
             "timestep": 1.0 * unit.femtoseconds,
             "collision_rate": 1.0 / unit.picoseconds,
             "n_steps": 1000,
-            "reassign_velocities": True,
+            "reassign_velocities":False,
         },
         replica_exchange_sampler_kwargs: Optional[Dict] = {
             "number_of_iterations": 5000,
@@ -146,6 +150,8 @@ class RepexConstructor:
         self._n_states = n_states
         self.restart = restart
         self._intervals_per_lambda_window = intervals_per_lambda_window
+        self._steps_per_equilibration_interval = steps_per_equilibration_interval
+        self._equilibration_protocol = equilibration_protocol
         self._extra_kwargs = kwargs
 
         # initial positions
@@ -171,7 +177,6 @@ class RepexConstructor:
             logging.info(
                 f"Restarting simulation from file {self._storage_kwargs['storage']}"
             )
-            # print(NNPRepexSampler.read_status(self._storage_kwargs["storage"]))
             _sampler = NNPRepexSampler.from_storage(self._storage_kwargs["storage"])
         else:
             logging.info(f"Starting Repex sampling from scratch")
@@ -186,9 +191,9 @@ class RepexConstructor:
                 init_positions=self._initial_positions,
                 temperature=self._temperature,
                 storage_kwargs=self._storage_kwargs,
-                setup_equilibration_intervals=self._intervals_per_lambda_window
-                * self._n_states,
-                steps_per_setup_equilibration_interval=100,
+                setup_equilibration_intervals=self._intervals_per_lambda_window,
+                equilibration_protocol=self._equilibration_protocol,
+                steps_per_setup_equilibration_interval=self._steps_per_equilibration_interval,
                 **self._extra_kwargs,
             )
         return _sampler
