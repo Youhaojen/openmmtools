@@ -489,10 +489,9 @@ class MixedSystem:
         restart: bool,
         steps: int,
         intervals_per_lambda_window: int = 10,
-        steps_per_equilibration_interval: int = 1000,
+        steps_per_equilibration_interval: int = 100,
         equilibration_protocol: str = "minimise"
     ) -> None:
-        print(equilibration_protocol, "!!!!")
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
         # even if restart has been set, disable if the checkpoint file was not found, enforce minimising the system
         if not repex_file_exists:

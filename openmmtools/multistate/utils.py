@@ -325,6 +325,7 @@ class NNPCompatibilityMixin(object):
         init_positions,
         temperature,
         storage_kwargs,
+        equilibration_protocol: str,
         n_replicas=None,
         lambda_schedule=None,
         lambda_protocol=None,
