@@ -1,4 +1,5 @@
 import sys
+import mdtraj
 from ase.io import read
 import torch
 import time
@@ -8,9 +9,16 @@ from ase import Atoms
 from rdkit.Chem.rdmolfiles import MolFromPDBFile, MolFromXYZFile
 from openmm.openmm import System
 from typing import List, Tuple, Optional, Union, Type
-from openmm import LangevinMiddleIntegrator, Vec3, MonteCarloBarostat
+from openmm import (
+    LangevinMiddleIntegrator,
+    Vec3,
+    MonteCarloBarostat,
+    CustomTorsionForce,
+)
+import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
 from mdtraj.reporters import HDF5Reporter
+from mdtraj.geometry.dihedral import indices_phi, indices_psi
 from openmm.app import (
     Simulation,
     StateDataReporter,
@@ -21,6 +29,9 @@ from openmm.app import (
     Modeller,
     PME,
 )
+from openmm.app.metadynamics import Metadynamics, BiasVariable
+import openmm
+from typing import Iterable
 from openmm.app.topology import Topology
 from openmm.app.element import Element
 from openmm.unit import nanometer, nanometers, molar, angstrom
@@ -108,11 +119,14 @@ class MixedSystem:
         neighbour_list: str,
         output_dir: str,
         system_type: str,
+        extract_bonded_components: bool,
         boxvecs: Optional[List[List]] = None,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
         pressure: Optional[float] = None,
+        cv1: Optional[str] = None,
+        cv2: Optional[str] = None
     ) -> None:
 
         self.forcefields = forcefields
@@ -125,6 +139,8 @@ class MixedSystem:
         self.friction_coeff = friction_coeff / picosecond
         self.timestep = timestep * femtosecond
         self.dtype = dtype
+        self.cv1 = cv1
+        self.cv2 = cv2
         self.output_dir = output_dir
         self.neighbour_list = neighbour_list
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
@@ -143,21 +159,24 @@ class MixedSystem:
             raise ValueError(f"Small molecule forcefield {smff} not recognised")
 
         os.makedirs(self.output_dir, exist_ok=True)
-        if system_type == "pure":
-            print("Creating pure system")
-            self.create_pure_system(
-                file=file,
-                model_path=model_path,
-                pressure=pressure,
-            )
+        if extract_bonded_components:
+            self.extract_nonbonded_components(file, ml_mol)
         else:
-            self.create_mixed_system(
-                file=file,
-                ml_mol=ml_mol,
-                model_path=model_path,
-                system_type=system_type,
-                pressure=pressure,
-            )
+            if system_type == "pure":
+                print("Creating pure system")
+                self.create_pure_system(
+                    file=file,
+                    model_path=model_path,
+                    pressure=pressure,
+                )
+            else:
+                self.create_mixed_system(
+                    file=file,
+                    ml_mol=ml_mol,
+                    model_path=model_path,
+                    system_type=system_type,
+                    pressure=pressure,
+                )
 
     def initialize_mm_forcefield(
         self, molecule: Optional[Molecule] = None
@@ -172,24 +191,6 @@ class MixedSystem:
             forcefield.registerTemplateGenerator(smirnoff.generator)
         return forcefield
 
-    # def initialize_ase_atoms(self, ml_mol: str) -> Tuple[Atoms, Molecule]:
-    #     """Generate the ase atoms object from the
-
-    #     :param str ml_mol: file path or smiles
-    #     :return Tuple[Atoms, Molecule]: ase Atoms object and initialised openFF molecule
-    #     """
-    #     # ml_mol can be a path to a file, or a smiles string
-    #     if os.path.isfile(ml_mol):
-    #         molecule = Molecule.from_file(ml_mol, allow_undefined_stereo=True)
-    #     else:
-    #         molecule = Molecule.from_smiles(ml_mol)
-
-    #     _, tmpfile = mkstemp(suffix="xyz")
-    #     molecule._to_xyz_file(tmpfile)
-    #     atoms = read(tmpfile)
-    #     os.remove(tmpfile)
-    #     return atoms, molecule
-
     def initialize_ase_atoms(self, ml_mol: str) -> Tuple[Atoms, Molecule]:
         """Generate the ase atoms object from the
 
@@ -201,10 +202,10 @@ class MixedSystem:
             if ml_mol.endswith(".pdb"):
                 # openFF refuses to work with pdb or xyz files, rely on rdkit to do the convertion to a mol first
                 molecule = MolFromPDBFile(ml_mol)
-                logger.warn(
+                logger.warning(
                     "Initializing topology from pdb - this can lead to valence errors, check your starting structure carefully!"
                 )
-                molecule = Molecule.from_rdkit(molecule, hydrogens_are_explicit=True)
+                molecule = Molecule.from_rdkit(molecule, hydrogens_are_explicit=True, allow_undefined_stereo=True)
             elif ml_mol.endswith(".xyz"):
                 molecule = MolFromXYZFile(ml_mol)
                 molecule = Molecule.from_rdkit(molecule, hydrogens_are_explicit=True)
@@ -293,6 +294,117 @@ class MixedSystem:
             barostat = MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
             barostat.setFrequency(25)  # 25 timestep is the default
             self.mixed_system.addForce(barostat)
+
+    # taken from peastman/openmm-ml
+    def remove_bonded_forces(
+        self,
+        system: openmm.System,
+        atoms: Iterable[int],
+        removeInSet: bool,
+        removeConstraints: bool,
+    ) -> openmm.System:
+        """Copy a System, removing all bonded interactions between atoms in (or not in) a particular set.
+
+        Parameters
+        ----------
+        system: System
+            the System to copy
+        atoms: Iterable[int]
+            a set of atom indices
+        removeInSet: bool
+            if True, any bonded term connecting atoms in the specified set is removed.  If False,
+            any term that does *not* connect atoms in the specified set is removed
+        removeConstraints: bool
+            if True, remove constraints between pairs of atoms in the set
+
+        Returns
+        -------
+        a newly created System object in which the specified bonded interactions have been removed
+        """
+        atomSet = set(atoms)
+
+        # Create an XML representation of the System.
+
+        import xml.etree.ElementTree as ET
+
+        xml = openmm.XmlSerializer.serialize(system)
+        root = ET.fromstring(xml)
+
+        # This function decides whether a bonded interaction should be removed.
+
+        def shouldRemove(termAtoms):
+            return all(a in atomSet for a in termAtoms) == removeInSet
+
+        # Remove bonds, angles, and torsions.
+
+        for bonds in root.findall("./Forces/Force/Bonds"):
+            for bond in bonds.findall("Bond"):
+                bondAtoms = [int(bond.attrib[p]) for p in ("p1", "p2")]
+                if shouldRemove(bondAtoms):
+                    bonds.remove(bond)
+        for angles in root.findall("./Forces/Force/Angles"):
+            for angle in angles.findall("Angle"):
+                angleAtoms = [int(angle.attrib[p]) for p in ("p1", "p2", "p3")]
+                if shouldRemove(angleAtoms):
+                    angles.remove(angle)
+        for torsions in root.findall("./Forces/Force/Torsions"):
+            for torsion in torsions.findall("Torsion"):
+                torsionAtoms = [
+                    int(torsion.attrib[p]) for p in ("p1", "p2", "p3", "p4")
+                ]
+                if shouldRemove(torsionAtoms):
+                    torsions.remove(torsion)
+
+        # Optionally remove constraints.
+
+        if removeConstraints:
+            for constraints in root.findall("./Constraints"):
+                for constraint in constraints.findall("Constraint"):
+                    constraintAtoms = [int(constraint.attrib[p]) for p in ("p1", "p2")]
+                    if shouldRemove(constraintAtoms):
+                        constraints.remove(constraint)
+
+        # Create a new System from it.
+
+        return openmm.XmlSerializer.deserialize(ET.tostring(root, encoding="unicode"))
+
+    def extract_nonbonded_components(self, atoms: str, smiles: str):
+        # takes an ase atoms object and a smiles string, moves nonbonded components of the forcefield to a new forcegroup, runs a single step of the integrator, attaches np array of nb_forces to the atoms object
+        atoms = read(atoms)
+        box_vectors = atoms.get_cell() / 10
+        print(box_vectors)
+        molecule = Molecule.from_smiles(smiles, hydrogens_are_explicit=False)
+        topology = molecule.to_topology().to_openmm()
+        if max(atoms.get_cell().cellpar()[:3]) > 0:
+            topology.setPeriodicBoxVectors(vectors=box_vectors)
+
+        forcefield = self.initialize_mm_forcefield(molecule=molecule)
+
+        system = forcefield.createSystem(
+            topology=topology,
+            nonbondedMethod=PME,
+            nonbondedCutoff=self.nonbondedCutoff * nanometer,
+            constraints=None,
+        )
+        atoms_idx = []
+        for atom in topology.atoms():
+            atoms_idx.append(atom.index)
+        # atoms = get_atoms_from_resname(topology=topology, resname="MOL")
+        print(atoms_idx)
+        self.mixed_system = self.remove_bonded_forces(
+            system, atoms=atoms_idx, removeInSet=True, removeConstraints=False
+        )
+
+        # step an integrator
+        temperature = 298.15 * kelvin
+        frictionCoeff = 1 / picosecond
+        timeStep = 1 * femtosecond
+        integrator = LangevinMiddleIntegrator(temperature, frictionCoeff, timeStep)
+        simulation = Simulation(topology, self.mixed_system, integrator)
+        simulation.context.setPositions(atoms.get_positions() / 10)
+        state = simulation.context.getState(getForces=True)
+        forces = state.getForces(asNumpy=True)
+        print(forces)
 
     def create_mixed_system(
         self,
@@ -408,23 +520,63 @@ class MixedSystem:
                 ).mixed_system
 
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
-            else:
-                logger.debug("Creating decoupled system")
-                self.mixed_system = MixedSystemConstructor(
-                    system=system,
-                    topology=self.modeller.topology,
-                    nnpify_resname=self.resname,
-                    nnp_potential=self.potential,
-                    atoms_obj=atoms,
-                    filename=model_path,
-                    dtype=self.dtype,
-                    nl=self.neighbour_list,
-                ).decoupled_system
+            # else:
+            #     logger.debug("Creating decoupled system")
+            #     self.mixed_system = MixedSystemConstructor(
+            #         system=system,
+            #         topology=self.modeller.topology,
+            #         nnpify_resname=self.resname,
+            #         nnp_potential=self.potential,
+            #         atoms_obj=atoms,
+            #         filename=model_path,
+            #         dtype=self.dtype,
+            #         nl=self.neighbour_list,
+            #     ).decoupled_system
 
         else:
             raise ValueError(f"system type {system_type} not recognised - aborting!")
 
-    def run_mixed_md(self, steps: int, interval: int, output_file: str):
+    def run_metadynamics(
+        # self, topology: Topology, cv1_dsl_string: str, cv2_dsl_string: str
+        self, topology: Topology
+    ) -> Metadynamics:
+        # run well-tempered metadynamics
+        mdtraj_topology = mdtraj.Topology.from_openmm(topology)
+
+        cv1_atom_indices = indices_psi(mdtraj_topology)
+        cv2_atom_indices = indices_phi(mdtraj_topology)
+        print("cv1_atom_indices", cv1_atom_indices)
+        # logger.info(f"Selcted cv1 torsion atoms {cv1_atom_indices}")
+        # cv2_atom_indices = mdtraj_topology.select(cv2_dsl_string)
+        # logger.info(f"Selcted cv2 torsion atoms {cv2_atom_indices}")
+        # takes the mixed system parametrised in the init method and performs metadynamics
+        # in the canonical case, this should just use the psi-phi backbone angles of the peptide
+
+        cv1 = CustomTorsionForce("theta")
+        # cv1.addTorsion(cv1_atom_indices)
+        cv1.addTorsion(cv1_atom_indices)
+        phi = BiasVariable(cv1, -np.pi, np.pi, biasWidth=0.5, periodic=True)
+
+        cv2 = CustomTorsionForce("theta")
+        cv2.addTorsion(cv2_atom_indices)
+        psi = BiasVariable(cv2, -np.pi, np.pi, biasWidth=0.5, periodic=True)
+        os.makedirs(os.path.join(self.output_dir, "metaD"), exist_ok=True)
+        meta = Metadynamics(
+            self.mixed_system,
+            [psi, phi],
+            temperature=self.temperature,
+            biasFactor=10.0,
+            height= 1.0 * kilojoule_per_mole,
+            frequency=100,
+            biasDir=os.path.join(self.output_dir, "metaD"),
+            saveFrequency=100
+        )
+
+        return meta
+
+    def run_mixed_md(
+        self, steps: int, interval: int, output_file: str, run_metadynamics: bool
+    ):
         """Runs plain MD on the mixed system, writes a pdb trajectory
 
         :param int steps: number of steps to run the simulation for
@@ -433,6 +585,14 @@ class MixedSystem:
         integrator = LangevinMiddleIntegrator(
             self.temperature, self.friction_coeff, self.timestep
         )
+
+        if run_metadynamics:
+            # TODO: this should handle creating the customCVs for us from atom selection or something
+            meta = self.run_metadynamics(
+                topology=self.modeller.topology
+                # cv1_dsl_string=self.cv1_dsl_string, cv2_dsl_string=self.cv2_dsl_string
+            )
+
         logger.debug(f"Running mixed MD for {steps} steps")
         simulation = Simulation(
             self.modeller.topology,
@@ -442,7 +602,7 @@ class MixedSystem:
         )
         simulation.context.setPositions(self.modeller.getPositions())
         logging.info("Minimising energy...")
-        simulation.minimizeEnergy(maxIterations=200)
+        simulation.minimizeEnergy()
         minimised_state = simulation.context.getState(
             getPositions=True, getVelocities=True, getForces=True
         )
@@ -465,10 +625,12 @@ class MixedSystem:
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=True,
+                enforcePeriodicBox=False,
             )
         )
-        dcd_reporter = DCDReporter(file=os.path.join(self.output_dir, "output.dcd"), reportInterval=interval)
+        dcd_reporter = DCDReporter(
+            file=os.path.join(self.output_dir, "output.dcd"), reportInterval=interval
+        )
         simulation.reporters.append(dcd_reporter)
         hdf5_reporter = HDF5Reporter(
             file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
@@ -477,11 +639,19 @@ class MixedSystem:
         )
         simulation.reporters.append(hdf5_reporter)
 
-        simulation.step(steps)
-        # # simulation.step(steps)
-        # for _ in range(10):
-        #     simulation.step(steps / 10)
-        #     print(simulation.topology.getPeriodicBoxVectors())
+        if run_metadynamics:
+            logger.info("Running metadynamics")
+            # handles running the simulation with metadynamics
+            meta.step(simulation, steps)
+
+            fe = meta.getFreeEnergy()
+            print(fe)
+            fig, ax= plt.subplots(1,1)
+            ax.imshow(fe)
+            fig.savefig(os.path.join(self.output_dir, "free_energy.png"))
+            
+        else:
+            simulation.step(steps)
 
     def run_repex(
         self,
@@ -490,7 +660,7 @@ class MixedSystem:
         steps: int,
         intervals_per_lambda_window: int = 10,
         steps_per_equilibration_interval: int = 100,
-        equilibration_protocol: str = "minimise"
+        equilibration_protocol: str = "minimise",
     ) -> None:
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
         # even if restart has been set, disable if the checkpoint file was not found, enforce minimising the system
@@ -501,7 +671,7 @@ class MixedSystem:
             initial_positions=self.modeller.getPositions(),
             intervals_per_lambda_window=2 * replicas,
             steps_per_equilibration_interval=steps_per_equilibration_interval,
-            equilibration_protocol = equilibration_protocol,
+            equilibration_protocol=equilibration_protocol,
             # repex_storage_file="./out_complex.nc",
             temperature=self.temperature * kelvin,
             n_states=replicas,
@@ -510,7 +680,7 @@ class MixedSystem:
                 "timestep": 1.0 * femtoseconds,
                 "collision_rate": 1.0 / picoseconds,
                 "n_steps": 1000,
-                "reassign_velocities":False,
+                "reassign_velocities": False,
                 "n_restart_attempts": 20,
             },
             replica_exchange_sampler_kwargs={

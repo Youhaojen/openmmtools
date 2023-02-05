@@ -27,6 +27,11 @@ def main():
     parser.add_argument("--potential", default="mace", type=str)
     parser.add_argument("--temperature", type=float, default=298.15)
     parser.add_argument("--pressure", type=float, default=None)
+    parser.add_argument(
+        "--extract_nb",
+        action="store_true",
+        help="If true, extracts non-bonded components of the SM forcefield, adds them to a separate array on the atoms object, writes back out",
+    )
     parser.add_argument("--replicas", type=int, default=10)
     parser.add_argument(
         "--output_file",
@@ -52,7 +57,9 @@ def main():
     parser.add_argument("--log_dir", default="./logs")
 
     parser.add_argument("--restart", action="store_true")
-    parser.add_argument("--equil", type=str, choices=["minimise", "gentle"], default="minimise")
+    parser.add_argument(
+        "--equil", type=str, choices=["minimise", "gentle"], default="minimise"
+    )
     parser.add_argument(
         "--forcefields",
         type=list,
@@ -79,6 +86,9 @@ def main():
         default="UNK",
         type=str,
     )
+    parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
+    parser.add_argument("--cv1", help="dsl string identifying atoms to be included in the cv1 torsion", default=None)
+    parser.add_argument("--cv2", help="dsl string identifying atoms to be included in the cv2 torsion", default=None)
     parser.add_argument(
         "--model_path",
         "-m",
@@ -139,10 +149,13 @@ def main():
                 dtype=dtype,
                 output_dir=os.path.join(args.output_dir, resname),
                 neighbour_list=args.neighbour_list,
+                extract_bonded_components=args.extract_nb,
                 system_type=args.system_type,
                 smff=args.smff,
                 pressure=args.pressure,
                 boxvecs=args.box,
+                cv1=args.cv1,
+                cv2=args.cv2
             )
 
         ml_mols = [os.path.join(args.file, f) for f in os.listdir(args.file)]
@@ -178,6 +191,7 @@ def main():
             padding=args.padding,
             temperature=args.temperature,
             dtype=dtype,
+            extract_bonded_components=args.extract_nb,
             output_dir=args.output_dir,
             neighbour_list=args.neighbour_list,
             system_type=args.system_type,
@@ -186,9 +200,14 @@ def main():
             boxvecs=args.box,
         )
         if args.run_type == "md":
-            mixed_system.run_mixed_md(args.steps, args.interval, args.output_file)
+            mixed_system.run_mixed_md(args.steps, args.interval, args.output_file, run_metadynamics=args.meta)
         elif args.run_type == "repex":
-            mixed_system.run_repex(replicas=args.replicas, restart=args.restart, steps=args.steps, equilibration_protocol= args.equil)
+            mixed_system.run_repex(
+                replicas=args.replicas,
+                restart=args.restart,
+                steps=args.steps,
+                equilibration_protocol=args.equil,
+            )
         elif args.run_type == "neq":
             mixed_system.run_neq_switching(args.steps, args.interval)
         else:

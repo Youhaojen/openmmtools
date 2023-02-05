@@ -17,7 +17,6 @@ import os
 import logging
 
 
-
 def deserialize_xml(filename):
     with open(filename, "r") as infile:
         xml_readable = infile.read()
@@ -29,6 +28,7 @@ class NNPRepexSampler(NNPCompatibilityMixin, replicaexchange.ReplicaExchangeSamp
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+
 class NNPMultiStateSampler(NNPCompatibilityMixin, multistatesampler.MultiStateSampler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -37,6 +37,7 @@ class NNPMultiStateSampler(NNPCompatibilityMixin, multistatesampler.MultiStateSa
 def get_atoms_from_resname(topology, resname) -> List:
     """get the atoms (in order) of the appropriate topology resname"""
     all_resnames = [res.name for res in topology.residues() if res.name == resname]
+    print(all_resnames)
     assert (
         len(all_resnames) == 1
     ), f"did not find exactly 1 residue with the name {resname}; found {len(all_resnames)}"
@@ -132,7 +133,7 @@ class RepexConstructor:
             "timestep": 1.0 * unit.femtoseconds,
             "collision_rate": 1.0 / unit.picoseconds,
             "n_steps": 1000,
-            "reassign_velocities":False,
+            "reassign_velocities": False,
         },
         replica_exchange_sampler_kwargs: Optional[Dict] = {
             "number_of_iterations": 5000,

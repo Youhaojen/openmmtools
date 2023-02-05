@@ -431,8 +431,12 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
 
         # Accept or reject.
         if log_p_accept >= 0.0 or np.random.rand() < math.exp(log_p_accept):
-            logger.info(f"Energy values for the swap: replicas {replica_i}, {replica_j}")
-            logger.info(f"E_ii {energy_ii}, E_jj {energy_jj}, E_ij {energy_ij}, E_ji {energy_ji}")
+            logger.info(
+                f"Energy values for the swap: replicas {replica_i}, {replica_j}"
+            )
+            logger.info(
+                f"E_ii {energy_ii}, E_jj {energy_jj}, E_ij {energy_ij}, E_ji {energy_ji}"
+            )
             logger.info(f"LogP_accept {log_p_accept}")
             # Swap states in replica slots i and j.
             self._replica_thermodynamic_states[replica_i] = thermodynamic_state_j
