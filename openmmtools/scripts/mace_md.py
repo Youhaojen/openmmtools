@@ -87,8 +87,16 @@ def main():
         type=str,
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
-    parser.add_argument("--cv1", help="dsl string identifying atoms to be included in the cv1 torsion", default=None)
-    parser.add_argument("--cv2", help="dsl string identifying atoms to be included in the cv2 torsion", default=None)
+    parser.add_argument(
+        "--cv1",
+        help="dsl string identifying atoms to be included in the cv1 torsion",
+        default=None,
+    )
+    parser.add_argument(
+        "--cv2",
+        help="dsl string identifying atoms to be included in the cv2 torsion",
+        default=None,
+    )
     parser.add_argument(
         "--model_path",
         "-m",
@@ -100,6 +108,12 @@ def main():
         type=str,
         choices=["pure", "hybrid", "decoupled"],
         default="pure",
+    )
+    parser.add_argument(
+        "--ml_selection",
+        help="specify how the ML subset should be interpreted, either as a resname or a chain ",
+        choices=["resname", "chain"],
+        default="resname",
     )
     args = parser.parse_args()
 
@@ -155,7 +169,7 @@ def main():
                 pressure=args.pressure,
                 boxvecs=args.box,
                 cv1=args.cv1,
-                cv2=args.cv2
+                cv2=args.cv2,
             )
 
         ml_mols = [os.path.join(args.file, f) for f in os.listdir(args.file)]
@@ -185,6 +199,7 @@ def main():
             model_path=args.model_path,
             forcefields=args.forcefields,
             resname=args.resname,
+            nnpify_type=args.ml_selection,
             ionicStrength=args.ionicStrength,
             nonbondedCutoff=args.nonbondedCutoff,
             potential=args.potential,
@@ -200,7 +215,9 @@ def main():
             boxvecs=args.box,
         )
         if args.run_type == "md":
-            mixed_system.run_mixed_md(args.steps, args.interval, args.output_file, run_metadynamics=args.meta)
+            mixed_system.run_mixed_md(
+                args.steps, args.interval, args.output_file, run_metadynamics=args.meta
+            )
         elif args.run_type == "repex":
             mixed_system.run_repex(
                 replicas=args.replicas,

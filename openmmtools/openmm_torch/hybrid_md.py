@@ -11,7 +11,6 @@ from openmm.openmm import System
 from typing import List, Tuple, Optional, Union, Type
 from openmm import (
     LangevinMiddleIntegrator,
-    Vec3,
     MonteCarloBarostat,
     CustomTorsionForce,
 )
@@ -34,7 +33,6 @@ import openmm
 from typing import Iterable
 from openmm.app.topology import Topology
 from openmm.app.element import Element
-from openmm.unit import nanometer, nanometers, molar, angstrom
 from openmm.unit import (
     kelvin,
     picosecond,
@@ -43,10 +41,13 @@ from openmm.unit import (
     picoseconds,
     femtoseconds,
     bar,
+    nanometer,
+    nanometers,
+    molar,
+    angstrom,
 )
 from openff.toolkit.topology import Molecule
 
-from openmmforcefields.generators import SMIRNOFFTemplateGenerator
 
 from openmmml.models.mace_potential import MacePotentialImplFactory
 from openmmml.models.anipotential import ANIPotentialImplFactory
@@ -56,6 +57,10 @@ from openmmtools.openmm_torch.repex import (
     MixedSystemConstructor,
     RepexConstructor,
     get_atoms_from_resname,
+)
+from openmmtools.openmm_torch.utils import (
+    initialize_mm_forcefield,
+    set_smff,
 )
 from tempfile import mkstemp
 import os
@@ -90,6 +95,7 @@ class MixedSystem:
     ionicStrength: float
     nonbondedCutoff: float
     resname: str
+    nnpify_type: str
     potential: str
     temperature: float
     friction_coeff: float
@@ -110,6 +116,7 @@ class MixedSystem:
         model_path: str,
         forcefields: List[str],
         resname: str,
+        nnpify_type: str,
         padding: float,
         ionicStrength: float,
         nonbondedCutoff: float,
@@ -119,14 +126,13 @@ class MixedSystem:
         neighbour_list: str,
         output_dir: str,
         system_type: str,
-        extract_bonded_components: bool,
         boxvecs: Optional[List[List]] = None,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
         pressure: Optional[float] = None,
         cv1: Optional[str] = None,
-        cv2: Optional[str] = None
+        cv2: Optional[str] = None,
     ) -> None:
 
         self.forcefields = forcefields
@@ -134,6 +140,7 @@ class MixedSystem:
         self.ionicStrength = ionicStrength
         self.nonbondedCutoff = nonbondedCutoff
         self.resname = resname
+        self.nnpify_type = nnpify_type
         self.potential = potential
         self.temperature = temperature
         self.friction_coeff = friction_coeff / picosecond
@@ -149,47 +156,25 @@ class MixedSystem:
         )
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
-        if smff == "1.0":
-            self.SM_FF = "openff_unconstrained-1.0.0.offxml"
-            logger.info("Using openff-1.0 unconstrained forcefield")
-        elif smff == "2.0":
-            self.SM_FF = "openff_unconstrained-2.0.0.offxml"
-            logger.info("Using openff-2.0 unconstrained forcefield")
-        else:
-            raise ValueError(f"Small molecule forcefield {smff} not recognised")
+        self.SM_FF = set_smff(smff)
+        logger.info(f"Using SMFF {self.SM_FF}")
 
         os.makedirs(self.output_dir, exist_ok=True)
-        if extract_bonded_components:
-            self.extract_nonbonded_components(file, ml_mol)
-        else:
-            if system_type == "pure":
-                print("Creating pure system")
-                self.create_pure_system(
-                    file=file,
-                    model_path=model_path,
-                    pressure=pressure,
-                )
-            else:
-                self.create_mixed_system(
-                    file=file,
-                    ml_mol=ml_mol,
-                    model_path=model_path,
-                    system_type=system_type,
-                    pressure=pressure,
-                )
-
-    def initialize_mm_forcefield(
-        self, molecule: Optional[Molecule] = None
-    ) -> ForceField:
-
-        forcefield = ForceField(*self.forcefields)
-        if molecule is not None:
-            # Ensure we use unconstrained force field
-            smirnoff = SMIRNOFFTemplateGenerator(
-                molecules=molecule, forcefield=self.SM_FF
+        if system_type == "pure":
+            print("Creating pure system")
+            self.create_pure_system(
+                file=file,
+                model_path=model_path,
+                pressure=pressure,
             )
-            forcefield.registerTemplateGenerator(smirnoff.generator)
-        return forcefield
+        else:
+            self.create_mixed_system(
+                file=file,
+                ml_mol=ml_mol,
+                model_path=model_path,
+                system_type=system_type,
+                pressure=pressure,
+            )
 
     def initialize_ase_atoms(self, ml_mol: str) -> Tuple[Atoms, Molecule]:
         """Generate the ase atoms object from the
@@ -205,7 +190,9 @@ class MixedSystem:
                 logger.warning(
                     "Initializing topology from pdb - this can lead to valence errors, check your starting structure carefully!"
                 )
-                molecule = Molecule.from_rdkit(molecule, hydrogens_are_explicit=True, allow_undefined_stereo=True)
+                molecule = Molecule.from_rdkit(
+                    molecule, hydrogens_are_explicit=True, allow_undefined_stereo=True
+                )
             elif ml_mol.endswith(".xyz"):
                 molecule = MolFromXYZFile(ml_mol)
                 molecule = Molecule.from_rdkit(molecule, hydrogens_are_explicit=True)
@@ -295,117 +282,6 @@ class MixedSystem:
             barostat.setFrequency(25)  # 25 timestep is the default
             self.mixed_system.addForce(barostat)
 
-    # taken from peastman/openmm-ml
-    def remove_bonded_forces(
-        self,
-        system: openmm.System,
-        atoms: Iterable[int],
-        removeInSet: bool,
-        removeConstraints: bool,
-    ) -> openmm.System:
-        """Copy a System, removing all bonded interactions between atoms in (or not in) a particular set.
-
-        Parameters
-        ----------
-        system: System
-            the System to copy
-        atoms: Iterable[int]
-            a set of atom indices
-        removeInSet: bool
-            if True, any bonded term connecting atoms in the specified set is removed.  If False,
-            any term that does *not* connect atoms in the specified set is removed
-        removeConstraints: bool
-            if True, remove constraints between pairs of atoms in the set
-
-        Returns
-        -------
-        a newly created System object in which the specified bonded interactions have been removed
-        """
-        atomSet = set(atoms)
-
-        # Create an XML representation of the System.
-
-        import xml.etree.ElementTree as ET
-
-        xml = openmm.XmlSerializer.serialize(system)
-        root = ET.fromstring(xml)
-
-        # This function decides whether a bonded interaction should be removed.
-
-        def shouldRemove(termAtoms):
-            return all(a in atomSet for a in termAtoms) == removeInSet
-
-        # Remove bonds, angles, and torsions.
-
-        for bonds in root.findall("./Forces/Force/Bonds"):
-            for bond in bonds.findall("Bond"):
-                bondAtoms = [int(bond.attrib[p]) for p in ("p1", "p2")]
-                if shouldRemove(bondAtoms):
-                    bonds.remove(bond)
-        for angles in root.findall("./Forces/Force/Angles"):
-            for angle in angles.findall("Angle"):
-                angleAtoms = [int(angle.attrib[p]) for p in ("p1", "p2", "p3")]
-                if shouldRemove(angleAtoms):
-                    angles.remove(angle)
-        for torsions in root.findall("./Forces/Force/Torsions"):
-            for torsion in torsions.findall("Torsion"):
-                torsionAtoms = [
-                    int(torsion.attrib[p]) for p in ("p1", "p2", "p3", "p4")
-                ]
-                if shouldRemove(torsionAtoms):
-                    torsions.remove(torsion)
-
-        # Optionally remove constraints.
-
-        if removeConstraints:
-            for constraints in root.findall("./Constraints"):
-                for constraint in constraints.findall("Constraint"):
-                    constraintAtoms = [int(constraint.attrib[p]) for p in ("p1", "p2")]
-                    if shouldRemove(constraintAtoms):
-                        constraints.remove(constraint)
-
-        # Create a new System from it.
-
-        return openmm.XmlSerializer.deserialize(ET.tostring(root, encoding="unicode"))
-
-    def extract_nonbonded_components(self, atoms: str, smiles: str):
-        # takes an ase atoms object and a smiles string, moves nonbonded components of the forcefield to a new forcegroup, runs a single step of the integrator, attaches np array of nb_forces to the atoms object
-        atoms = read(atoms)
-        box_vectors = atoms.get_cell() / 10
-        print(box_vectors)
-        molecule = Molecule.from_smiles(smiles, hydrogens_are_explicit=False)
-        topology = molecule.to_topology().to_openmm()
-        if max(atoms.get_cell().cellpar()[:3]) > 0:
-            topology.setPeriodicBoxVectors(vectors=box_vectors)
-
-        forcefield = self.initialize_mm_forcefield(molecule=molecule)
-
-        system = forcefield.createSystem(
-            topology=topology,
-            nonbondedMethod=PME,
-            nonbondedCutoff=self.nonbondedCutoff * nanometer,
-            constraints=None,
-        )
-        atoms_idx = []
-        for atom in topology.atoms():
-            atoms_idx.append(atom.index)
-        # atoms = get_atoms_from_resname(topology=topology, resname="MOL")
-        print(atoms_idx)
-        self.mixed_system = self.remove_bonded_forces(
-            system, atoms=atoms_idx, removeInSet=True, removeConstraints=False
-        )
-
-        # step an integrator
-        temperature = 298.15 * kelvin
-        frictionCoeff = 1 / picosecond
-        timeStep = 1 * femtosecond
-        integrator = LangevinMiddleIntegrator(temperature, frictionCoeff, timeStep)
-        simulation = Simulation(topology, self.mixed_system, integrator)
-        simulation.context.setPositions(atoms.get_positions() / 10)
-        state = simulation.context.getState(getForces=True)
-        forces = state.getForces(asNumpy=True)
-        print(forces)
-
     def create_mixed_system(
         self,
         file: str,
@@ -468,7 +344,9 @@ class MixedSystem:
 
         # Handle the mixed systems with a classical forcefield
         elif system_type in ["hybrid", "decoupled"]:
-            forcefield = self.initialize_mm_forcefield(molecule=molecule)
+            forcefield = initialize_mm_forcefield(
+                molecule=molecule, forcefields=self.forcefields, smff=self.SM_FF
+            )
             self.modeller.addSolvent(
                 forcefield,
                 padding=self.padding * nanometers,
@@ -510,8 +388,9 @@ class MixedSystem:
                 self.mixed_system = MixedSystemConstructor(
                     system=system,
                     topology=self.modeller.topology,
-                    nnpify_resname=self.resname,
+                    nnpify_id=self.resname,
                     nnp_potential=self.potential,
+                    nnpify_type=self.nnpify_type,
                     atoms_obj=atoms,
                     filename=model_path,
                     dtype=self.dtype,
@@ -538,7 +417,8 @@ class MixedSystem:
 
     def run_metadynamics(
         # self, topology: Topology, cv1_dsl_string: str, cv2_dsl_string: str
-        self, topology: Topology
+        self,
+        topology: Topology,
     ) -> Metadynamics:
         # run well-tempered metadynamics
         mdtraj_topology = mdtraj.Topology.from_openmm(topology)
@@ -566,10 +446,10 @@ class MixedSystem:
             [psi, phi],
             temperature=self.temperature,
             biasFactor=10.0,
-            height= 1.0 * kilojoule_per_mole,
+            height=1.0 * kilojoule_per_mole,
             frequency=100,
             biasDir=os.path.join(self.output_dir, "metaD"),
-            saveFrequency=100
+            saveFrequency=100,
         )
 
         return meta
@@ -625,7 +505,7 @@ class MixedSystem:
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=False,
+                enforcePeriodicBox=True,
             )
         )
         dcd_reporter = DCDReporter(
@@ -646,10 +526,10 @@ class MixedSystem:
 
             fe = meta.getFreeEnergy()
             print(fe)
-            fig, ax= plt.subplots(1,1)
+            fig, ax = plt.subplots(1, 1)
             ax.imshow(fe)
             fig.savefig(os.path.join(self.output_dir, "free_energy.png"))
-            
+
         else:
             simulation.step(steps)
 
@@ -692,7 +572,9 @@ class MixedSystem:
                 "storage": os.path.join(self.output_dir, "repex.nc"),
                 "checkpoint_interval": 1,
                 "analysis_particle_indices": get_atoms_from_resname(
-                    topology=self.modeller.topology, resname=self.resname
+                    topology=self.modeller.topology,
+                    nnpify_id=self.resname,
+                    nnpify_type=self.nnpify_type,
                 ),
             },
         ).sampler

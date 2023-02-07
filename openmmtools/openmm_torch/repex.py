@@ -1,9 +1,12 @@
 import logging
+
 import os
 from openmmml.mlpotential import MLPotential
 import openmm
 from openmm import unit, app
+from openmm.app import Topology
 import time
+import mdtraj
 import numpy as np
 from copy import deepcopy
 from openmmtools import cache
@@ -34,21 +37,35 @@ class NNPMultiStateSampler(NNPCompatibilityMixin, multistatesampler.MultiStateSa
         super().__init__(*args, **kwargs)
 
 
-def get_atoms_from_resname(topology, resname) -> List:
+def get_atoms_from_resname(
+    topology: Topology, nnpify_id: str, nnpify_type: str
+) -> List:
     """get the atoms (in order) of the appropriate topology resname"""
-    all_resnames = [res.name for res in topology.residues() if res.name == resname]
-    print(all_resnames)
-    assert (
-        len(all_resnames) == 1
-    ), f"did not find exactly 1 residue with the name {resname}; found {len(all_resnames)}"
-    for residue in list(topology.residues()):
-        if residue.name == resname:
-            break
-    atoms = []
-    for atom in list(residue.atoms()):
-        atoms.append(atom.index)
-    assert sorted(atoms) == atoms, f"atom indices ({atoms}) are not in ascending order"
-    return atoms
+    print(nnpify_type)
+    if nnpify_type == "chain":
+        print(topology.chains)
+        topology = mdtraj.Topology.from_openmm(topology)
+        atoms = topology.select(f"chainid == {nnpify_id}")
+        return atoms
+    elif nnpify_type == "resname":
+        all_resnames = [
+            res.name for res in topology.residues() if res.name == nnpify_id
+        ]
+        assert (
+            len(all_resnames) == 1
+        ), f"did not find exactly 1 residue with the name {nnpify_id}; found {len(all_resnames)}"
+        for residue in list(topology.residues()):
+            if residue.name == nnpify_id:
+                break
+        atoms = []
+        for atom in list(residue.atoms()):
+            atoms.append(atom.index)
+        assert (
+            sorted(atoms) == atoms
+        ), f"atom indices ({atoms}) are not in ascending order"
+        return atoms
+    else:
+        raise ValueError("Either chain or resname must be set")
 
 
 def assert_no_residue_constraints(system: openmm.System, atoms: Iterable[int]):
@@ -75,7 +92,8 @@ class MixedSystemConstructor:
         self,
         system: openmm.System,
         topology: app.topology.Topology,
-        nnpify_resname: Optional[str] = "MOL",
+        nnpify_id: Optional[str] = None,
+        nnpify_type: str = "resname",
         nnp_potential: Optional[str] = "ani2x",
         implementation: Optional[str] = "nnpops",
         **createMixedSystem_kwargs,
@@ -85,10 +103,11 @@ class MixedSystemConstructor:
         """
         self._system = system
         self._topology = topology
-        self._nnpify_resname = nnpify_resname
+        self._nnpify_id = nnpify_id
         self._implementation = implementation
 
-        self._atom_indices = get_atoms_from_resname(topology, nnpify_resname)
+        self._atom_indices = get_atoms_from_resname(topology, nnpify_id, nnpify_type)
+        print(f"Treating atom indices {self._atom_indices} with ML potential")
         assert_no_residue_constraints(system, self._atom_indices)
         self._nnp_potential_str = nnp_potential
         self._nnp_potential = MLPotential(self._nnp_potential_str)
