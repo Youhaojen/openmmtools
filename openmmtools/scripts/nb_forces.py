@@ -2,7 +2,7 @@
 
 from ase.io import read, write
 from openff.toolkit.topology import Molecule
-from openmm.unit import kelvin, picosecond, femtosecond, nanometer
+from openmm.unit import kelvin, picosecond, femtosecond, nanometer, angstrom, kilojoule_per_mole
 from openmm import LangevinMiddleIntegrator
 from openmm.app import (
     Simulation,
@@ -22,18 +22,24 @@ from openmmtools.openmm_torch.utils import (
     initialize_mm_forcefield,
     set_smff,
 )
+from multiprocessing import Pool
+from ase.units import eV, kJ, mol
 
 
-def extract_nonbonded_components(path: str, smiles: str, smff: str):
+
+def extract_nonbonded_components(values):
+    (atoms, smff) = values
     # takes an ase atoms object and a smiles string, moves nonbonded components of the forcefield to a new forcegroup, runs a single step of the integrator, attaches np array of nb_forces to the atoms object
-    configs = read(path, ":")
-    with open(smiles, "r") as f:
-        parsed_smiles = f.readlines()
-    for atoms, smile in zip(configs, parsed_smiles):
-        smile = smile.split()[0]
-        box_vectors = atoms.get_cell() / 10
-        print(box_vectors)
-        molecule = Molecule.from_smiles(smile, hydrogens_are_explicit=False)
+    # parsed_smiles = f.readlines()
+    smile = atoms.info['smiles']
+    smile = smile.split()[0]
+    print(smile)
+    if atoms.get_cell() is not None:
+
+        atoms.set_cell([50,50,50])
+    box_vectors = atoms.get_cell() / 10
+    try:
+        molecule = Molecule.from_smiles(smile, hydrogens_are_explicit=False, allow_undefined_stereo=True)
         topology = molecule.to_topology().to_openmm()
         if max(atoms.get_cell().cellpar()[:3]) > 0:
             topology.setPeriodicBoxVectors(vectors=box_vectors)
@@ -53,6 +59,9 @@ def extract_nonbonded_components(path: str, smiles: str, smff: str):
         system = remove_bonded_forces(
             system, atoms=atoms_idx, removeInSet=True, removeConstraints=False
         )
+        bonded_system =  remove_bonded_forces(
+            system, atoms=atoms_idx, removeInSet=False, removeConstraints=False
+        )
 
         # step an integrator
         temperature = 298.15 * kelvin
@@ -61,26 +70,41 @@ def extract_nonbonded_components(path: str, smiles: str, smff: str):
         integrator = LangevinMiddleIntegrator(temperature, frictionCoeff, timeStep)
         simulation = Simulation(topology, system, integrator)
         simulation.context.setPositions(atoms.get_positions() / 10)
-        state = simulation.context.getState(getForces=True)
-        forces = state.getForces(asNumpy=True)
+
+        # convert to eV and eV/A
+        state = simulation.context.getState(getForces=True, getEnergy=True)
+        forces = state.getForces(asNumpy=True).value_in_unit(kilojoule_per_mole / angstrom)  * kJ / (mol * eV)
+        energy = state.getPotentialEnergy().value_in_unit(kilojoule_per_mole) * kJ / (mol * eV) 
+        print(energy)
+        sr_energy = atoms.info["energy"] - energy
+        sr_forces = atoms.arrays["forces"] - forces
         print(forces)
         atoms.new_array("nb_forces", forces)
+        atoms.info["nb_energy"]= energy
+        atoms.new_array("sr_forces", sr_forces)
+        atoms.info["sr_energy"]= sr_energy
 
-    return configs
+    except Exception as e:
+        print("Error!!!")
+        print(e)
+
+    return atoms
 
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("-f", "--file", help="path to xyz file containing configs")
-    parser.add_argument("-s", "--smiles", help="path to xyz file containing configs")
+    parser.add_argument("-n", "--nprocs", type=int)
     parser.add_argument(
         "-smff", help="which version of the OFF forcefield to use", default="1.0"
     )
     args = parser.parse_args()
+    p = Pool(args.nprocs)
 
-    configs = extract_nonbonded_components(
-        path=args.file, smiles=args.smiles, smff=args.smff
-    )
+    configs = read(args.file, ":8")
+    values = [(conf, args.smff) for conf in configs]
+
+    configs = p.map(extract_nonbonded_components, values)
 
     with open("output_configs.extxyz", "w") as f:
         write(f, configs)

@@ -135,6 +135,7 @@ class MixedSystem:
         cv2: Optional[str] = None,
     ) -> None:
 
+        self.file = file
         self.forcefields = forcefields
         self.padding = padding
         self.ionicStrength = ionicStrength
@@ -163,7 +164,7 @@ class MixedSystem:
         if system_type == "pure":
             print("Creating pure system")
             self.create_pure_system(
-                file=file,
+                file=ml_mol,
                 model_path=model_path,
                 pressure=pressure,
             )
@@ -230,7 +231,8 @@ class MixedSystem:
         atoms = read(file)
         if file.endswith(".xyz"):
             pos = atoms.get_positions() / 10
-            box_vectors = atoms.get_cell() / 10
+            box_vectors = atoms.get_cell() / 10 
+
             print("Got box vectors", box_vectors)
             elements = atoms.get_chemical_symbols()
 
@@ -434,11 +436,11 @@ class MixedSystem:
 
         cv1 = CustomTorsionForce("theta")
         # cv1.addTorsion(cv1_atom_indices)
-        cv1.addTorsion(cv1_atom_indices)
+        cv1.addTorsion(*cv1_atom_indices[0])
         phi = BiasVariable(cv1, -np.pi, np.pi, biasWidth=0.5, periodic=True)
 
         cv2 = CustomTorsionForce("theta")
-        cv2.addTorsion(cv2_atom_indices)
+        cv2.addTorsion(*cv2_atom_indices[0])
         psi = BiasVariable(cv2, -np.pi, np.pi, biasWidth=0.5, periodic=True)
         os.makedirs(os.path.join(self.output_dir, "metaD"), exist_ok=True)
         meta = Metadynamics(
@@ -467,9 +469,11 @@ class MixedSystem:
         )
 
         if run_metadynamics:
-            # TODO: this should handle creating the customCVs for us from atom selection or something
+            # if we have initialized from xyz, the topology won't have the information required to identify the cv indices, create from a pdb
+            input_file = PDBFile(self.file)
+            topology = input_file.getTopology()
             meta = self.run_metadynamics(
-                topology=self.modeller.topology
+                topology=topology
                 # cv1_dsl_string=self.cv1_dsl_string, cv2_dsl_string=self.cv2_dsl_string
             )
 
@@ -478,7 +482,7 @@ class MixedSystem:
             self.modeller.topology,
             self.mixed_system,
             integrator,
-            platformProperties={"Precision": self.openmm_precision},
+            platformProperties={"Precision": "Mixed", "DeviceIndex": "0,1"},
         )
         simulation.context.setPositions(self.modeller.getPositions())
         logging.info("Minimising energy...")
@@ -505,7 +509,7 @@ class MixedSystem:
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=True,
+                enforcePeriodicBox=False,
             )
         )
         dcd_reporter = DCDReporter(

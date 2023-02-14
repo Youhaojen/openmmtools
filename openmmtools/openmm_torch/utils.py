@@ -31,8 +31,6 @@ def initialize_mm_forcefield(
     if molecule is not None:
         # Ensure we use unconstrained force field
         smirnoff = SMIRNOFFTemplateGenerator(molecules=molecule, forcefield=smff)
-        unique_atoms = smirnoff._generate_unique_atom_names(molecule)
-        print(unique_atoms)
         forcefield.registerTemplateGenerator(smirnoff.generator)
     return forcefield
 

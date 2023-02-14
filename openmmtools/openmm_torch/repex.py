@@ -41,9 +41,7 @@ def get_atoms_from_resname(
     topology: Topology, nnpify_id: str, nnpify_type: str
 ) -> List:
     """get the atoms (in order) of the appropriate topology resname"""
-    print(nnpify_type)
     if nnpify_type == "chain":
-        print(topology.chains)
         topology = mdtraj.Topology.from_openmm(topology)
         atoms = topology.select(f"chainid == {nnpify_id}")
         return atoms
