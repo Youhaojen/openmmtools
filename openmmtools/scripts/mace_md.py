@@ -99,16 +99,16 @@ def main():
         type=str,
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
-    parser.add_argument(
-        "--cv1",
-        help="dsl string identifying atoms to be included in the cv1 torsion",
-        default=None,
-    )
-    parser.add_argument(
-        "--cv2",
-        help="dsl string identifying atoms to be included in the cv2 torsion",
-        default=None,
-    )
+    # parser.add_argument(
+    #     "--cv1",
+    #     help="dsl string identifying atoms to be included in the cv1 torsion",
+    #     default=None,
+    # )
+    # parser.add_argument(
+    #     "--cv2",
+    #     help="dsl string identifying atoms to be included in the cv2 torsion",
+    #     default=None,
+    # )
     parser.add_argument(
         "--model_path",
         "-m",
@@ -186,6 +186,7 @@ def main():
             args.output_file,
             run_metadynamics=args.meta,
             integrator_name=args.integrator,
+            restart=args.restart
         )
     elif args.run_type == "repex":
         system.run_repex(
