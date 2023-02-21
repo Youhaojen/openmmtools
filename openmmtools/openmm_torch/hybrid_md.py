@@ -24,6 +24,7 @@ from openmm.app import (
     StateDataReporter,
     PDBReporter,
     DCDReporter,
+    CheckpointReporter,
     PDBFile,
     Modeller,
     PME,
@@ -110,7 +111,6 @@ class MACESystemBase(ABC):
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
-        boxvecs=None,
     ) -> None:
         super().__init__()
 
@@ -178,6 +178,7 @@ class MACESystemBase(ABC):
         steps: int,
         interval: int,
         output_file: str,
+        restart: bool ,
         run_metadynamics: bool = False,
         integrator_name: str = "langevin",
     ):
@@ -211,16 +212,23 @@ class MACESystemBase(ABC):
             integrator,
             platformProperties={"Precision": self.openmm_precision},
         )
-        simulation.context.setPositions(self.modeller.getPositions())
-        logging.info("Minimising energy...")
-        simulation.minimizeEnergy()
-        minimised_state = simulation.context.getState(
-            getPositions=True, getVelocities=True, getForces=True
-        )
-        with open(os.path.join(self.output_dir, f"minimised_system.pdb"), "w") as f:
-            PDBFile.writeFile(
-                self.modeller.topology, minimised_state.getPositions(), file=f
+        checkpoint_filepath = os.path.join(self.output_dir, output_file[:-4] + ".chk")
+        if restart:
+            with open(checkpoint_filepath, 'rb') as f:
+                logger.info("Loading simulation from checkpoint file...")
+                simulation.context.loadCheckpoint(f.read())
+        else:
+            
+            simulation.context.setPositions(self.modeller.getPositions())
+            logging.info("Minimising energy...")
+            simulation.minimizeEnergy()
+            minimised_state = simulation.context.getState(
+                getPositions=True, getVelocities=True, getForces=True
             )
+            with open(os.path.join(self.output_dir, f"minimised_system.pdb"), "w") as f:
+                PDBFile.writeFile(
+                    self.modeller.topology, minimised_state.getPositions(), file=f
+                )
 
         reporter = StateDataReporter(
             file=sys.stdout,
@@ -249,6 +257,17 @@ class MACESystemBase(ABC):
             velocities=True,
         )
         simulation.reporters.append(hdf5_reporter)
+        # Add an extra hash to any existing checkpoint files
+        checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith("#")]
+        for file in checkpoint_files:
+            os.rename(os.path.join(self.output_dir, file), os.path.join(self.output_dir, f"{file}#"))
+
+        # backup the existing checkpoint file
+        if os.path.isfile(checkpoint_filepath):
+            os.rename(checkpoint_filepath, checkpoint_filepath + "#")
+        checkpoint_reporter = CheckpointReporter(file=checkpoint_filepath, reportInterval=interval)
+        simulation.reporters.append(checkpoint_reporter)
+
 
         if run_metadynamics:
             logger.info("Running metadynamics")
