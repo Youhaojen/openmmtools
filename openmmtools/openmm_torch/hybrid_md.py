@@ -8,11 +8,12 @@ import sys
 from ase import Atoms
 from rdkit.Chem.rdmolfiles import MolFromPDBFile, MolFromXYZFile
 from openmm.openmm import System
-from typing import List, Tuple, Optional, Union, Type
+from typing import List, Tuple, Optional
 from openmm import (
     LangevinMiddleIntegrator,
     MonteCarloBarostat,
     CustomTorsionForce,
+    NoseHooverIntegrator,
 )
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
@@ -23,14 +24,11 @@ from openmm.app import (
     StateDataReporter,
     PDBReporter,
     DCDReporter,
-    ForceField,
     PDBFile,
     Modeller,
     PME,
 )
 from openmm.app.metadynamics import Metadynamics, BiasVariable
-import openmm
-from typing import Iterable
 from openmm.app.topology import Topology
 from openmm.app.element import Element
 from openmm.unit import (
@@ -65,6 +63,7 @@ from openmmtools.openmm_torch.utils import (
 from tempfile import mkstemp
 import os
 import logging
+from abc import ABC, abstractmethod
 
 
 def get_xyz_from_mol(mol):
@@ -82,20 +81,10 @@ def get_xyz_from_mol(mol):
 MLPotential.registerImplFactory("mace", MacePotentialImplFactory())
 MLPotential.registerImplFactory("ani2x", ANIPotentialImplFactory())
 
-
-# platform = Platform.getPlatformByName("CUDA")
-# platform.setPropertyDefaultValue("DeterministicForces", "true")
-
 logger = logging.getLogger("INFO")
 
 
-class MixedSystem:
-    forcefields: List[str]
-    padding: float
-    ionicStrength: float
-    nonbondedCutoff: float
-    resname: str
-    nnpify_type: str
+class MACESystemBase(ABC):
     potential: str
     temperature: float
     friction_coeff: float
@@ -106,76 +95,42 @@ class MixedSystem:
     openmm_precision: str
     SM_FF: str
     modeller: Modeller
-    mixed_system: System
-    decoupled_system: Optional[System]
+    system: System
 
     def __init__(
         self,
         file: str,
-        ml_mol: str,
         model_path: str,
-        forcefields: List[str],
-        resname: str,
-        nnpify_type: str,
-        padding: float,
-        ionicStrength: float,
-        nonbondedCutoff: float,
         potential: str,
-        temperature: float,
-        dtype: torch.dtype,
-        neighbour_list: str,
         output_dir: str,
-        system_type: str,
-        boxvecs: Optional[List[List]] = None,
+        temperature: float,
+        pressure: Optional[float] = None,
+        dtype: torch.dtype = torch.float64,
+        neighbour_list: str = "torch_nl_n2",
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
-        pressure: Optional[float] = None,
-        cv1: Optional[str] = None,
-        cv2: Optional[str] = None,
+        boxvecs=None,
     ) -> None:
+        super().__init__()
 
         self.file = file
-        self.forcefields = forcefields
-        self.padding = padding
-        self.ionicStrength = ionicStrength
-        self.nonbondedCutoff = nonbondedCutoff
-        self.resname = resname
-        self.nnpify_type = nnpify_type
+        self.model_path = model_path
         self.potential = potential
         self.temperature = temperature
+        self.pressure = pressure
         self.friction_coeff = friction_coeff / picosecond
         self.timestep = timestep * femtosecond
         self.dtype = dtype
-        self.cv1 = cv1
-        self.cv2 = cv2
         self.output_dir = output_dir
         self.neighbour_list = neighbour_list
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
-        self.boxvecs = (
-            boxvecs if boxvecs is not None else [[5.0, 0, 0], [0, 5.0, 0], [0, 0, 5.0]]
-        )
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
         self.SM_FF = set_smff(smff)
         logger.info(f"Using SMFF {self.SM_FF}")
 
         os.makedirs(self.output_dir, exist_ok=True)
-        if system_type == "pure":
-            print("Creating pure system")
-            self.create_pure_system(
-                file=ml_mol,
-                model_path=model_path,
-                pressure=pressure,
-            )
-        else:
-            self.create_mixed_system(
-                file=file,
-                ml_mol=ml_mol,
-                model_path=model_path,
-                system_type=system_type,
-                pressure=pressure,
-            )
 
     def initialize_ase_atoms(self, ml_mol: str) -> Tuple[Atoms, Molecule]:
         """Generate the ase atoms object from the
@@ -210,263 +165,35 @@ class MixedSystem:
 
         _, tmpfile = mkstemp(suffix=".xyz")
         molecule._to_xyz_file(tmpfile)
-        print(tmpfile)
         atoms = read(tmpfile)
         # os.remove(tmpfile)
         return atoms, molecule
 
-    def create_pure_system(
-        self,
-        file: str,
-        model_path: str,
-        pressure: Union[float, Type[None]],
-    ) -> None:
-        """Creates the mixed system from a purely mm system
-
-        :param str file: input pdb file
-        :param str model_path: path to the mace model
-        :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
-        """
-        # initialize the ase atoms for MACE
-        atoms = read(file)
-        if file.endswith(".xyz"):
-            pos = atoms.get_positions() / 10
-            box_vectors = atoms.get_cell() / 10 
-
-            print("Got box vectors", box_vectors)
-            elements = atoms.get_chemical_symbols()
-
-            # Create a topology object
-            topology = Topology()
-
-            # Add atoms to the topology
-            chain = topology.addChain()
-            res = topology.addResidue("mace_system", chain)
-            for i, (element, position) in enumerate(zip(elements, pos)):
-                e = Element.getBySymbol(element)
-                topology.addAtom(str(i), e, res)
-            # if there is a periodic box specified add it to the Topology
-            if max(atoms.get_cell().cellpar()[:3]) > 0:
-                print("Adding periodic box to topology ...")
-                topology.setPeriodicBoxVectors(vectors=box_vectors)
-
-            print(f"Initialized topology with {pos.shape} positions")
-
-            self.modeller = Modeller(topology, pos)
-
-        elif file.endswith(".sdf"):
-            molecule = Molecule.from_file(file)
-            # input_file = molecule
-            topology = molecule.to_topology().to_openmm()
-            # Hold positions in nanometers
-            positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
-
-            print(f"Initialized topology with {positions.shape} positions")
-
-            self.modeller = Modeller(topology, positions)
-        else:
-            raise NotImplementedError
-        pbc = True if topology.getPeriodicBoxVectors() is not None else False
-        print("system uses pbc: ", pbc)
-        ml_potential = MLPotential("mace")
-        self.mixed_system = ml_potential.createSystem(
-            topology,
-            atoms_obj=atoms,
-            filename=model_path,
-            dtype=self.dtype,
-            nl=self.neighbour_list,
-            pbc=pbc,
-        )
-
-        if pressure is not None:
-            print(f"Pressure will be maintained at {pressure} bar with MC barostat")
-            barostat = MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
-            barostat.setFrequency(25)  # 25 timestep is the default
-            self.mixed_system.addForce(barostat)
-
-    def create_mixed_system(
-        self,
-        file: str,
-        model_path: str,
-        ml_mol: str,
-        system_type: str,
-        pressure: Optional[float],
-    ) -> None:
-        """Creates the mixed system from a purely mm system
-
-        :param str file: input pdb file
-        :param str smiles: smiles of the small molecule, only required when passed as part of the complex
-        :param str model_path: path to the mace model
-        :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
-        """
-        # initialize the ase atoms for MACE
-
-        atoms, molecule = self.initialize_ase_atoms(ml_mol)
-        # set the default topology to that of the ml molecule, this will get overwritten below
-        # topology = molecule.to_topology().to_openmm()
-
-        # Handle a complex, passed as a pdb file
-        if file.endswith(".pdb"):
-            input_file = PDBFile(file)
-            topology = input_file.getTopology()
-
-            # if pure_ml_system specified, we just need to parse the input file
-            # if not pure_ml_system:
-            self.modeller = Modeller(input_file.topology, input_file.positions)
-            print(f"Initialized topology with {len(input_file.positions)} positions")
-
-        # Handle a small molecule/small periodic system, passed as an sdf or xyz
-        elif file.endswith(".sdf") or file.endswith(".xyz"):
-            # this is unnecessary, we have run exactly the same thing above
-            # molecule = Molecule.from_file(file)
-            input_file = molecule
-            topology = molecule.to_topology().to_openmm()
-            # Hold positions in nanometers
-            positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
-
-            print(f"Initialized topology with {positions.shape} positions")
-
-            self.modeller = Modeller(topology, positions)
-
-        if system_type == "pure":
-            print("boxvecs", self.boxvecs)
-            # we have the input_file, create the system directly from the mace potential
-            # TODO: add a function to compute periodic box vectors to enforce a minimum padding distance to each box wall
-            atoms.set_cell(np.array(self.boxvecs) * 10)  # set in angstroms
-            # atoms.set_cell([50,50,50])
-            topology.setPeriodicBoxVectors(self.boxvecs)
-            ml_potential = MLPotential("mace")
-            self.mixed_system = ml_potential.createSystem(
-                topology,
-                atoms_obj=atoms,
-                filename=model_path,
-                dtype=self.dtype,
-                nl=self.neighbour_list,
-            )
-
-        # Handle the mixed systems with a classical forcefield
-        elif system_type in ["hybrid", "decoupled"]:
-            forcefield = initialize_mm_forcefield(
-                molecule=molecule, forcefields=self.forcefields, smff=self.SM_FF
-            )
-            self.modeller.addSolvent(
-                forcefield,
-                padding=self.padding * nanometers,
-                ionicStrength=self.ionicStrength * molar,
-                neutralize=True,
-            )
-
-            omm_box_vecs = self.modeller.topology.getPeriodicBoxVectors()
-            # print(omm_box_vecs)
-            atoms.set_cell(
-                [
-                    omm_box_vecs[0][0].value_in_unit(angstrom),
-                    omm_box_vecs[1][1].value_in_unit(angstrom),
-                    omm_box_vecs[2][2].value_in_unit(angstrom),
-                ]
-            )
-
-            system = forcefield.createSystem(
-                self.modeller.topology,
-                nonbondedMethod=PME,
-                nonbondedCutoff=self.nonbondedCutoff * nanometer,
-                constraints=None,
-            )
-            if pressure is not None:
-                logger.info(
-                    f"Pressure will be maintained at {pressure} bar with MC barostat"
-                )
-                system.addForce(
-                    MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
-                )
-
-            # write the final prepared system to disk
-            with open(os.path.join(self.output_dir, "prepared_system.pdb"), "w") as f:
-                PDBFile.writeFile(
-                    self.modeller.topology, self.modeller.getPositions(), file=f
-                )
-            if system_type == "hybrid":
-                logger.debug("Creating hybrid system")
-                self.mixed_system = MixedSystemConstructor(
-                    system=system,
-                    topology=self.modeller.topology,
-                    nnpify_id=self.resname,
-                    nnp_potential=self.potential,
-                    nnpify_type=self.nnpify_type,
-                    atoms_obj=atoms,
-                    filename=model_path,
-                    dtype=self.dtype,
-                    nl=self.neighbour_list,
-                    pbc=True if system.usesPeriodicBoundaryConditions() else False,
-                ).mixed_system
-
-            # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
-            # else:
-            #     logger.debug("Creating decoupled system")
-            #     self.mixed_system = MixedSystemConstructor(
-            #         system=system,
-            #         topology=self.modeller.topology,
-            #         nnpify_resname=self.resname,
-            #         nnp_potential=self.potential,
-            #         atoms_obj=atoms,
-            #         filename=model_path,
-            #         dtype=self.dtype,
-            #         nl=self.neighbour_list,
-            #     ).decoupled_system
-
-        else:
-            raise ValueError(f"system type {system_type} not recognised - aborting!")
-
-    def run_metadynamics(
-        # self, topology: Topology, cv1_dsl_string: str, cv2_dsl_string: str
-        self,
-        topology: Topology,
-    ) -> Metadynamics:
-        # run well-tempered metadynamics
-        mdtraj_topology = mdtraj.Topology.from_openmm(topology)
-
-        cv1_atom_indices = indices_psi(mdtraj_topology)
-        cv2_atom_indices = indices_phi(mdtraj_topology)
-        print("cv1_atom_indices", cv1_atom_indices)
-        # logger.info(f"Selcted cv1 torsion atoms {cv1_atom_indices}")
-        # cv2_atom_indices = mdtraj_topology.select(cv2_dsl_string)
-        # logger.info(f"Selcted cv2 torsion atoms {cv2_atom_indices}")
-        # takes the mixed system parametrised in the init method and performs metadynamics
-        # in the canonical case, this should just use the psi-phi backbone angles of the peptide
-
-        cv1 = CustomTorsionForce("theta")
-        # cv1.addTorsion(cv1_atom_indices)
-        cv1.addTorsion(*cv1_atom_indices[0])
-        phi = BiasVariable(cv1, -np.pi, np.pi, biasWidth=0.5, periodic=True)
-
-        cv2 = CustomTorsionForce("theta")
-        cv2.addTorsion(*cv2_atom_indices[0])
-        psi = BiasVariable(cv2, -np.pi, np.pi, biasWidth=0.5, periodic=True)
-        os.makedirs(os.path.join(self.output_dir, "metaD"), exist_ok=True)
-        meta = Metadynamics(
-            self.mixed_system,
-            [psi, phi],
-            temperature=self.temperature,
-            biasFactor=10.0,
-            height=1.0 * kilojoule_per_mole,
-            frequency=100,
-            biasDir=os.path.join(self.output_dir, "metaD"),
-            saveFrequency=100,
-        )
-
-        return meta
+    @abstractmethod
+    def create_system(self):
+        pass
 
     def run_mixed_md(
-        self, steps: int, interval: int, output_file: str, run_metadynamics: bool
+        self,
+        steps: int,
+        interval: int,
+        output_file: str,
+        run_metadynamics: bool = False,
+        integrator_name: str = "langevin",
     ):
         """Runs plain MD on the mixed system, writes a pdb trajectory
 
         :param int steps: number of steps to run the simulation for
         :param int interval: reportInterval attached to reporters
         """
-        integrator = LangevinMiddleIntegrator(
-            self.temperature, self.friction_coeff, self.timestep
-        )
+        if integrator_name == "langevin":
+            integrator = LangevinMiddleIntegrator(
+                self.temperature, self.friction_coeff, self.timestep
+            )
+        elif integrator_name == "nose-hoover":
+            integrator = NoseHooverIntegrator(
+                self.temperature, self.friction_coeff, self.timestep
+            )
 
         if run_metadynamics:
             # if we have initialized from xyz, the topology won't have the information required to identify the cv indices, create from a pdb
@@ -480,9 +207,9 @@ class MixedSystem:
         logger.debug(f"Running mixed MD for {steps} steps")
         simulation = Simulation(
             self.modeller.topology,
-            self.mixed_system,
+            self.system,
             integrator,
-            platformProperties={"Precision": "Mixed", "DeviceIndex": "0,1"},
+            platformProperties={"Precision": self.openmm_precision},
         )
         simulation.context.setPositions(self.modeller.getPositions())
         logging.info("Minimising energy...")
@@ -529,7 +256,6 @@ class MixedSystem:
             meta.step(simulation, steps)
 
             fe = meta.getFreeEnergy()
-            print(fe)
             fig, ax = plt.subplots(1, 1)
             ax.imshow(fe)
             fig.savefig(os.path.join(self.output_dir, "free_energy.png"))
@@ -551,12 +277,11 @@ class MixedSystem:
         if not repex_file_exists:
             restart = False
         sampler = RepexConstructor(
-            mixed_system=self.mixed_system,
+            mixed_system=self.system,
             initial_positions=self.modeller.getPositions(),
             intervals_per_lambda_window=2 * replicas,
             steps_per_equilibration_interval=steps_per_equilibration_interval,
             equilibration_protocol=equilibration_protocol,
-            # repex_storage_file="./out_complex.nc",
             temperature=self.temperature * kelvin,
             n_states=replicas,
             restart=restart,
@@ -594,6 +319,44 @@ class MixedSystem:
 
         sampler.run()
 
+    def run_metadynamics(
+        # self, topology: Topology, cv1_dsl_string: str, cv2_dsl_string: str
+        self,
+        topology: Topology,
+    ) -> Metadynamics:
+        # run well-tempered metadynamics
+        mdtraj_topology = mdtraj.Topology.from_openmm(topology)
+
+        cv1_atom_indices = indices_psi(mdtraj_topology)
+        cv2_atom_indices = indices_phi(mdtraj_topology)
+        # logger.info(f"Selcted cv1 torsion atoms {cv1_atom_indices}")
+        # cv2_atom_indices = mdtraj_topology.select(cv2_dsl_string)
+        # logger.info(f"Selcted cv2 torsion atoms {cv2_atom_indices}")
+        # takes the mixed system parametrised in the init method and performs metadynamics
+        # in the canonical case, this should just use the psi-phi backbone angles of the peptide
+
+        cv1 = CustomTorsionForce("theta")
+        # cv1.addTorsion(cv1_atom_indices)
+        cv1.addTorsion(*cv1_atom_indices[0])
+        phi = BiasVariable(cv1, -np.pi, np.pi, biasWidth=0.5, periodic=True)
+
+        cv2 = CustomTorsionForce("theta")
+        cv2.addTorsion(*cv2_atom_indices[0])
+        psi = BiasVariable(cv2, -np.pi, np.pi, biasWidth=0.5, periodic=True)
+        os.makedirs(os.path.join(self.output_dir, "metaD"), exist_ok=True)
+        meta = Metadynamics(
+            self.system,
+            [psi, phi],
+            temperature=self.temperature,
+            biasFactor=10.0,
+            height=1.0 * kilojoule_per_mole,
+            frequency=100,
+            biasDir=os.path.join(self.output_dir, "metaD"),
+            saveFrequency=100,
+        )
+
+        return meta
+
     def run_neq_switching(self, steps: int, interval: int) -> float:
         """Compute the protocol work performed by switching from the MM description to the MM/ML through lambda_interpolate
 
@@ -612,7 +375,7 @@ class MixedSystem:
 
         simulation = Simulation(
             self.modeller.topology,
-            self.mixed_system,
+            self.system,
             integrator,
             platformProperties={"Precision": "Double", "Threads": 16},
         )
@@ -643,174 +406,299 @@ class MixedSystem:
         )
         # We need to take the final state
         simulation.step(steps)
-        protocol_work = (integrator.get_protocol_work(dimensionless=True),)
+        protocol_work = integrator.get_protocol_work(dimensionless=True)
         return protocol_work
 
 
-# class MACESystem:
-#     potential: str
-#     temperature: float
-#     friction_coeff: float
-#     timestep: float
-#     dtype: torch.dtype
-#     output_dir: str
-#     neighbour_list: str
-#     openmm_precision: str
-#     SM_FF: str
-#     modeller: Modeller
+class MixedSystem(MACESystemBase):
+    forcefields: List[str]
+    padding: float
+    ionicStrength: float
+    nonbondedCutoff: float
+    resname: str
+    nnpify_type: str
+    mixed_system: System
 
-#     def __init__(
-#         self,
-#         file: str,
-#         model_path: str,
-#         potential: str,
-#         output_dir: str,
-#         temperature: float,
-#         pressure: Optional[float] = None,
-#         dtype: torch.dtype = torch.float64,
-#         neighbour_list: str = "torch_nl_n2",
-#         friction_coeff: float = 1.0,
-#         timestep: float = 1.0,
-#         smff: str = "1.0",
-#     ) -> None:
+    def __init__(
+        self,
+        file: str,
+        ml_mol: str,
+        model_path: str,
+        forcefields: List[str],
+        resname: str,
+        nnpify_type: str,
+        padding: float,
+        ionicStrength: float,
+        nonbondedCutoff: float,
+        potential: str,
+        temperature: float,
+        dtype: torch.dtype,
+        neighbour_list: str,
+        output_dir: str,
+        system_type: str = "hybrid",
+        friction_coeff: float = 1.0,
+        timestep: float = 1.0,
+        smff: str = "1.0",
+        pressure: Optional[float] = None,
+        cv1: Optional[str] = None,
+        cv2: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            file=file,
+            model_path=model_path,
+            potential=potential,
+            output_dir=output_dir,
+            temperature=temperature,
+            pressure=pressure,
+            dtype=dtype,
+            neighbour_list=neighbour_list,
+            friction_coeff=friction_coeff,
+            timestep=timestep,
+            smff=smff,
+        )
 
-#         self.potential = potential
-#         self.temperature = temperature
-#         self.friction_coeff = friction_coeff / picosecond
-#         self.timestep = timestep * femtosecond
-#         self.dtype = dtype
-#         self.output_dir = output_dir
-#         self.neighbour_list = neighbour_list
-#         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
-#         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
+        self.forcefields = forcefields
+        self.padding = padding
+        self.ionicStrength = ionicStrength
+        self.nonbondedCutoff = nonbondedCutoff
+        self.resname = resname
+        self.nnpify_type = nnpify_type
+        self.cv1 = cv1
+        self.cv2 = cv2
 
-#         if smff == "1.0":
-#             self.SM_FF = "openff_unconstrained-1.0.0.offxml"
-#             logger.info("Using openff-1.0 unconstrained forcefield")
-#         elif smff == "2.0":
-#             self.SM_FF = "openff_unconstrained-2.0.0.offxml"
-#             logger.info("Using openff-2.0 unconstrained forcefield")
-#         else:
-#             raise ValueError(f"Small molecule forcefield {smff} not recognised")
+        logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
-#         os.makedirs(self.output_dir, exist_ok=True)
+        # created the hybrid system
+        self.create_system(
+            file=file,
+            ml_mol=ml_mol,
+            model_path=model_path,
+            system_type=system_type,
+            pressure=pressure,
+        )
 
-#         self.create_system(file=file, model_path=model_path, pressure=pressure)
+    def create_system(
+        self,
+        file: str,
+        model_path: str,
+        ml_mol: str,
+        system_type: str,
+        pressure: Optional[float],
+    ) -> None:
+        """Creates the mixed system from a purely mm system
 
-#     def create_system(
-#         self,
-#         file: str,
-#         model_path: str,
-#         pressure: Union[float, Type[None]],
-#     ) -> None:
-#         """Creates the mixed system from a purely mm system
+        :param str file: input pdb file
+        :param str model_path: path to the mace model
+        :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
+        """
+        atoms, molecule = self.initialize_ase_atoms(ml_mol)
+        # set the default topology to that of the ml molecule, this will get overwritten below
+        # topology = molecule.to_topology().to_openmm()
 
-#         :param str file: input pdb file
-#         :param str model_path: path to the mace model
-#         :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
-#         """
-#         # initialize the ase atoms for MACE
-#         atoms = read(file)
-#         if file.endswith(".xyz"):
-#             pos = atoms.get_positions() / 10
-#             box_vectors = atoms.get_cell() / 10
-#             elements = atoms.get_chemical_symbols()
+        # Handle a complex, passed as a pdb file
+        if file.endswith(".pdb"):
+            input_file = PDBFile(file)
+            topology = input_file.getTopology()
 
-#             # Create a topology object
-#             topology = Topology()
+            # if pure_ml_system specified, we just need to parse the input file
+            # if not pure_ml_system:
+            self.modeller = Modeller(input_file.topology, input_file.positions)
+            logger.info(f"Initialized topology with {len(input_file.positions)} positions")
 
-#             # Add atoms to the topology
-#             chain = topology.addChain()
-#             res = topology.addResidue("mace_system", chain)
-#             for i, (element, position) in enumerate(zip(elements, pos)):
-#                 e = Element.getBySymbol(element)
-#                 topology.addAtom(str(i), e, res)
-#             # if there is a periodic box specified add it to the Topology
-#             if max(atoms.get_cell().cellpar()[:3]) > 0:
-#                 topology.setPeriodicBoxVectors(vectors=box_vectors)
+        # Handle a small molecule/small periodic system, passed as an sdf or xyz
+        elif file.endswith(".sdf") or file.endswith(".xyz"):
+            input_file = molecule
+            topology = molecule.to_topology().to_openmm()
+            # Hold positions in nanometers
+            positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
 
-#             print(f"Initialized topology with {pos.shape} positions")
+            logger.info(f"Initialized topology with {positions.shape} positions")
 
-#             self.modeller = Modeller(topology, pos)
-#         # Handle a system, passed as a pdb file
-#         # if file.endswith(".pdb"):
-#         #     input_file = PDBFile(file)
-#         #     topology = input_file.getTopology()
+            self.modeller = Modeller(topology, positions)
 
-#         #     # if pure_ml_system specified, we just need to parse the input file
-#         #     # if not pure_ml_system:
-#         #     self.modeller = Modeller(input_file.topology, input_file.positions)
-#         #     print(f"Initialized topology with {len(input_file.positions)} positions")
+        forcefield = initialize_mm_forcefield(
+            molecule=molecule, forcefields=self.forcefields, smff=self.SM_FF
+        )
+        self.modeller.addSolvent(
+            forcefield,
+            padding=self.padding * nanometers,
+            ionicStrength=self.ionicStrength * molar,
+            neutralize=True,
+        )
 
-#         elif file.endswith(".sdf"):
-#             molecule = Molecule.from_file(file)
-#             # input_file = molecule
-#             topology = molecule.to_topology().to_openmm()
-#             # Hold positions in nanometers
-#             positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
+        omm_box_vecs = self.modeller.topology.getPeriodicBoxVectors()
+        # ensure atoms object has boxvectors taken from the PDB file
+        atoms.set_cell(
+            [
+                omm_box_vecs[0][0].value_in_unit(angstrom),
+                omm_box_vecs[1][1].value_in_unit(angstrom),
+                omm_box_vecs[2][2].value_in_unit(angstrom),
+            ]
+        )
 
-#             print(f"Initialized topology with {positions.shape} positions")
+        system = forcefield.createSystem(
+            self.modeller.topology,
+            nonbondedMethod=PME,
+            nonbondedCutoff=self.nonbondedCutoff * nanometer,
+            constraints=None,
+        )
+        if pressure is not None:
+            logger.info(
+                f"Pressure will be maintained at {pressure} bar with MC barostat"
+            )
+            system.addForce(
+                MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
+            )
 
-#             self.modeller = Modeller(topology, positions)
-#         else:
-#             raise NotImplementedError
+        # write the final prepared system to disk
+        with open(os.path.join(self.output_dir, "prepared_system.pdb"), "w") as f:
+            PDBFile.writeFile(
+                self.modeller.topology, self.modeller.getPositions(), file=f
+            )
+        if system_type == "hybrid":
+            logger.debug("Creating hybrid system")
+            self.system = MixedSystemConstructor(
+                system=system,
+                topology=self.modeller.topology,
+                nnpify_id=self.resname,
+                nnp_potential=self.potential,
+                nnpify_type=self.nnpify_type,
+                atoms_obj=atoms,
+                filename=model_path,
+                dtype=self.dtype,
+                nl=self.neighbour_list,
+            ).mixed_system
 
-#         ml_potential = MLPotential("mace")
-#         self.mixed_system = ml_potential.createSystem(
-#             topology, atoms_obj=atoms, filename=model_path, dtype=self.dtype
-#         )
+            # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
+        elif system_type == "decoupled":
+            # TODO: implement decoupled system for VdW/coulomb forces
+            raise NotImplementedError
+            logger.debug("Creating decoupled system")
+            self.mixed_system = MixedSystemConstructor(
+                system=system,
+                topology=self.modeller.topology,
+                nnpify_resname=self.resname,
+                nnp_potential=self.potential,
+                atoms_obj=atoms,
+                filename=model_path,
+                dtype=self.dtype,
+                nl=self.neighbour_list,
+            ).decoupled_system
 
-#         if pressure is not None:
-#             print(f"Pressure will be maintained at {pressure} bar with MC barostat")
-#             barostat = MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
-#             # barostat.setFrequency(25)  25 timestep is the default
-#             self.mixed_system.addForce(barostat)
+        else:
+            raise ValueError(f"system type {system_type} not recognised - aborting!")
 
-#     def run_md(self, steps: int, interval: int, output_file: str) -> float:
-#         """Runs Langevin MD with MACE, writes a pdb trajectory
 
-#         :param int steps: number of steps to run the simulation for
-#         :param int interval: reportInterval attached to reporters
-#         """
-#         integrator = LangevinMiddleIntegrator(
-#             self.temperature, self.friction_coeff, self.timestep
-#         )
+class PureSystem(MACESystemBase):
+    potential: str
+    temperature: float
+    friction_coeff: float
+    timestep: float
+    dtype: torch.dtype
+    output_dir: str
+    neighbour_list: str
+    openmm_precision: str
+    SM_FF: str
+    modeller: Modeller
+    boxsize: Optional[int]
 
-#         simulation = Simulation(
-#             self.modeller.topology,
-#             self.mixed_system,
-#             integrator,
-#             platformProperties={"Precision": self.openmm_precision},
-#         )
-#         simulation.context.setPositions(self.modeller.getPositions())
-#         # simulation.context.setVelocitiesToTemperature(self.temperature)
-#         # logging.info("Minimising energy...")
-#         # simulation.context.setParameter("lambda_interpolate", 0)
-#         simulation.minimizeEnergy()
-#         # minimised_state = simulation.context.getState(
-#         #     getPositions=True, getVelocities=True, getForces=True
-#         # )
-#         # with open(os.path.join(self.output_dir, f"minimised_system.pdb"), "w") as f:
-#         #     PDBFile.writeFile(
-#         #         self.modeller.topology, minimised_state.getPositions(), file=f
-#         #     )
+    def __init__(
+        self,
+        file: str,
+        model_path: str,
+        potential: str,
+        output_dir: str,
+        temperature: float,
+        boxsize: Optional[int] = None,
+        pressure: Optional[float] = None,
+        dtype: torch.dtype = torch.float64,
+        neighbour_list: str = "torch_nl_n2",
+        friction_coeff: float = 1.0,
+        timestep: float = 1.0,
+        smff: str = "1.0",
+    ) -> None:
 
-#         reporter = StateDataReporter(
-#             file=sys.stdout,
-#             reportInterval=interval,
-#             step=True,
-#             time=True,
-#             potentialEnergy=True,
-#             temperature=True,
-#             speed=True,
-#         )
-#         simulation.reporters.append(reporter)
-#         simulation.reporters.append(
-#             PDBReporter(
-#                 file=os.path.join(self.output_dir, output_file),
-#                 reportInterval=interval,
-#                 enforcePeriodicBox=False,
-#             )
-#         )
+        super().__init__(
+            file=file,
+            model_path=model_path,
+            potential=potential,
+            output_dir=output_dir,
+            temperature=temperature,
+            pressure=pressure,
+            dtype=dtype,
+            neighbour_list=neighbour_list,
+            friction_coeff=friction_coeff,
+            timestep=timestep,
+            smff=smff,
+        )
+        logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
-#         simulation.step(steps)
+        self.boxsize = boxsize
+
+        self.create_system(file=file, model_path=model_path, pressure=pressure)
+
+    def create_system(
+        self,
+        file: str,
+        model_path: str,
+        pressure: Optional[float],
+    ) -> None:
+        """Creates the mixed system from a purely mm system
+
+        :param str file: input pdb file
+        :param str model_path: path to the mace model
+        :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
+        """
+        # initialize the ase atoms for MACE
+        atoms = read(file)
+        if file.endswith(".xyz"):
+            pos = atoms.get_positions() / 10
+            box_vectors = atoms.get_cell() / 10
+            elements = atoms.get_chemical_symbols()
+
+            # Create a topology object
+            topology = Topology()
+
+            # Add atoms to the topology
+            chain = topology.addChain()
+            res = topology.addResidue("mace_system", chain)
+            for i, (element, position) in enumerate(zip(elements, pos)):
+                e = Element.getBySymbol(element)
+                topology.addAtom(str(i), e, res)
+            # if there is a periodic box specified add it to the Topology
+            if max(atoms.get_cell().cellpar()[:3]) > 0:
+                topology.setPeriodicBoxVectors(vectors=box_vectors)
+
+            logger.info(f"Initialized topology with {pos.shape} positions")
+
+            self.modeller = Modeller(topology, pos)
+
+        elif file.endswith(".sdf"):
+            molecule = Molecule.from_file(file)
+            # input_file = molecule
+            topology = molecule.to_topology().to_openmm()
+            # Hold positions in nanometers
+            positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
+
+            # Manually attach periodic box if requested
+            if self.boxsize is not None:
+
+                boxvecs = np.eye(3, 3) * self.boxsize
+                topology.setPeriodicBoxVectors(boxvecs)
+
+            logger.info(f"Initialized topology with {positions.shape} positions")
+
+            self.modeller = Modeller(topology, positions)
+        else:
+            raise NotImplementedError
+
+        ml_potential = MLPotential("mace")
+        self.system = ml_potential.createSystem(
+            topology, atoms_obj=atoms, filename=model_path, dtype=self.dtype
+        )
+
+        if pressure is not None:
+            logger.info(f"Pressure will be maintained at {pressure} bar with MC barostat")
+            barostat = MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
+            # barostat.setFrequency(25)  25 timestep is the default
+            self.system.addForce(barostat)

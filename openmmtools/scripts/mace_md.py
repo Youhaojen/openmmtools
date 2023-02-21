@@ -1,7 +1,7 @@
 import os
 import mpiplus
 from argparse import ArgumentParser
-from openmmtools.openmm_torch.hybrid_md import MixedSystem
+from openmmtools.openmm_torch.hybrid_md import PureSystem, MixedSystem
 from mace import tools
 import logging
 import torch
@@ -28,6 +28,18 @@ def main():
     parser.add_argument("--temperature", type=float, default=298.15)
     parser.add_argument("--pressure", type=float, default=None)
     parser.add_argument(
+        "--integrator",
+        type=str,
+        default="langevin",
+        choices=["langevin", "nose-hoover"],
+    )
+    parser.add_argument(
+        "--timestep",
+        default=1.0,
+        help="integration timestep in femtoseconds",
+        type=float,
+    )
+    parser.add_argument(
         "--extract_nb",
         action="store_true",
         help="If true, extracts non-bonded components of the SM forcefield, adds them to a separate array on the atoms object, writes back out",
@@ -52,7 +64,7 @@ def main():
     )
 
     # optionally specify box vectors for periodic systems
-    parser.add_argument("--box", type=float, nargs="+", action="append")
+    parser.add_argument("--box", type=float)
 
     parser.add_argument("--log_dir", default="./logs")
 
@@ -132,68 +144,23 @@ def main():
     if args.file.endswith(".sdf") and args.ml_mol is None:
         args.ml_mol = args.file
 
-    # TODO: refactor this
-    # user has specified a directory containing sdf files, parallelise over MPI ranks
-    if os.path.isdir(args.file) and all(
-        [f.endswith(".sdf") for f in os.listdir(args.file)]
-    ):
-        if args.run_type != "md":
-            raise ValueError(
-                f"When multiple moleucles are specified, only MD can be specified as the running mode, not {args.run_type}"
-            )
+    if args.system_type == "pure":
+        system = PureSystem(
+            file=args.file,
+            model_path=args.model_path,
+            potential=args.potential,
+            output_dir=args.output_dir,
+            temperature=args.temperature,
+            pressure=args.pressure,
+            dtype=dtype,
+            neighbour_list=args.neighbour_list,
+            timestep=args.timestep,
+            smff=args.smff,
+            boxsize=args.box,
+        )
 
-        def _initialize_mixed_system(sdf_file):
-            with open(sdf_file, "r") as f:
-                # crudely extract resname as first line of sdf file
-                lines = f.readlines()
-                resname = lines[0].strip()
-                print(f"Got resname {resname} ")
-
-            return MixedSystem(
-                file=sdf_file,
-                ml_mol=sdf_file,
-                model_path=args.model_path,
-                forcefields=args.forcefields,
-                nnpify_type=args.ml_selection,
-                resname=resname,
-                ionicStrength=args.ionicStrength,
-                nonbondedCutoff=args.nonbondedCutoff,
-                potential=args.potential,
-                padding=args.padding,
-                temperature=args.temperature,
-                dtype=dtype,
-                output_dir=os.path.join(args.output_dir, resname),
-                neighbour_list=args.neighbour_list,
-                system_type=args.system_type,
-                smff=args.smff,
-                pressure=args.pressure,
-                boxvecs=args.box,
-                cv1=args.cv1,
-                cv2=args.cv2,
-            )
-
-        ml_mols = [os.path.join(args.file, f) for f in os.listdir(args.file)]
-
-        # TODO: Why does system setup with MPI cause the downstream MPI processes to misbehave?
-
-        # mixed_systems, _ = mpiplus.distribute(_initialize_mixed_system, ml_mols, send_results_to=0, sync_nodes=True)
-        mixed_systems = [_initialize_mixed_system(sdf_file) for sdf_file in ml_mols]
-        print("mixed systems: ", mixed_systems)
-
-        def _run_mixed_md(system_idx: int):
-            return mixed_systems[system_idx].run_mixed_md(
-                args.steps, args.interval, args.output_file
-            )
-
-        # now distribute execution of the MD jobs between the MPI ranks
-
-        print("Running MD on parallel MPI ranks")
-        mpiplus.distribute(_run_mixed_md, range(len(mixed_systems)))
-        # print(results)
-
-    else:
-
-        mixed_system = MixedSystem(
+    elif args.system_type == "hybrid":
+        system = MixedSystem(
             file=args.file,
             ml_mol=args.ml_mol,
             model_path=args.model_path,
@@ -211,23 +178,26 @@ def main():
             system_type=args.system_type,
             smff=args.smff,
             pressure=args.pressure,
-            boxvecs=args.box,
         )
-        if args.run_type == "md":
-            mixed_system.run_mixed_md(
-                args.steps, args.interval, args.output_file, run_metadynamics=args.meta
-            )
-        elif args.run_type == "repex":
-            mixed_system.run_repex(
-                replicas=args.replicas,
-                restart=args.restart,
-                steps=args.steps,
-                equilibration_protocol=args.equil,
-            )
-        elif args.run_type == "neq":
-            mixed_system.run_neq_switching(args.steps, args.interval)
-        else:
-            raise ValueError(f"run_type {args.run_type} was not recognised")
+    if args.run_type == "md":
+        system.run_mixed_md(
+            args.steps,
+            args.interval,
+            args.output_file,
+            run_metadynamics=args.meta,
+            integrator_name=args.integrator,
+        )
+    elif args.run_type == "repex":
+        system.run_repex(
+            replicas=args.replicas,
+            restart=args.restart,
+            steps=args.steps,
+            equilibration_protocol=args.equil,
+        )
+    elif args.run_type == "neq":
+        system.run_neq_switching(args.steps, args.interval)
+    else:
+        raise ValueError(f"run_type {args.run_type} was not recognised")
 
 
 if __name__ == "__main__":
