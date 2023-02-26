@@ -75,7 +75,7 @@ setup(
             "benchmark-alchemy = openmmtools.tests.test_alchemy:benchmark_alchemy_from_pdb",
             "mace-md = openmmtools.scripts.mace_md:main",
             "extract_nb_forces = openmmtools.scripts.nb_forces:main",
-            "extract_atomtypes = openmmtools.scripts.extract_atomtypes:main"
+            "extract_atomtypes = openmmtools.scripts.extract_atomtypes:main",
         ]
     },
 )
