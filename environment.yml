@@ -1,0 +1,38 @@
+name: mace-mlmm
+channels:
+  - conda-forge/label/openmm-torch_rc
+  - conda-forge/label/openmm_rc
+  - conda-forge
+  - omnia
+  - defaults
+dependencies:
+  - matplotlib-base=3.6.1
+  - mdtraj=1.9.7
+  - openff-forcefields
+  - netcdf4
+  - mpi4py
+  - openff-toolkit=0.10.6
+  - openmm=8.0.0beta
+  - openmm-torch=1.0beta
+  - openmmforcefields=0.11.2
+  - parmed=3.4.3
+  - pymbar=3.*
+  - pytorch=1.12.1
+  - rdkit=2022.09.1
+  - smirnoff99frosst=1.1.0
+  - pip
+  - mdanalysis
+  - torchani=2.2.2
+  - pip:
+    - numba
+    - amberlite==22.0
+    - amberutils==21.0
+    - ase==3.22.1
+    - black==22.10.0
+    - matplotlib-inline==0.1.6
+    - mmpbsa-py==16.0
+    - pytest==7.2.0
+    - pytraj==2.0.6
+    - sander==22.0
+    - torch-ema==0.3
+    - nglview
