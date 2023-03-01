@@ -62,8 +62,10 @@ def extract_nonbonded_components(values):
             write(f, atoms)
             print(tmpdir)
 
-        cmd = f"python /home/jhm72/rds/hpc-work/software/xyz2mol/xyz2mol.py {os.path.join(tmpdir, 'mol.xyz')} -o sdf > {os.path.join(tmpdir, 'mol.sdf')}"
+        cmd = f"python $XYZ2MOL {os.path.join(tmpdir, 'mol.xyz')} -o sdf > {os.path.join(tmpdir, 'mol.sdf')}"
         os.system(cmd)
+        subprocess.run(cmd, shell=True, check=True, capture_output=True, timeout=60)
+        
 
 
         cmd = f"obabel -isdf {os.path.join(tmpdir, 'mol.sdf')} -omol2 -O {os.path.join(tmpdir, 'mol.mol2')}"
@@ -80,10 +82,11 @@ def extract_nonbonded_components(values):
             raise Exception("Error in antechamber")
         
         # extract the atom types and partial charges
-        cmd = "cat  mol.ac | grep UNL | awk '{ print $9 } ' > atomtypes.txt"
+        cmd = "cat  mol.ac | grep UNL | awk '{ print $10 } ' > atomtypes.txt"
         subprocess.run(
             cmd, capture_output=True, universal_newlines=True, check=True, shell=True
         )
+
         with open("atomtypes.txt", "r") as f:
             # it captures an extra line at the bottom of the mol2 that we don't need
             atomtypes = [l.strip() for l in f.readlines()]
@@ -158,13 +161,15 @@ def main():
     parser.add_argument("-f", "--file", help="path to xyz file containing configs")
     parser.add_argument("-n", "--nprocs", type=int)
     parser.add_argument("-o", "--output", help="path to output xyz file")
+    parser.add_argument("-r", "--range", help="range of configs to extract")
     parser.add_argument(
         "-smff", help="which version of the OFF forcefield to use", default="1.0"
     )
     args = parser.parse_args()
     p = Pool(args.nprocs)
 
-    configs = read(args.file, ":")
+    configs = read(args.file, args.range)
+    print(f"Evaluating {len(configs)} configs", flush=True)
     values = [(conf, args.smff) for conf in configs]
 
     configs = p.map(extract_nonbonded_components, values)

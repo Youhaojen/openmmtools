@@ -47,6 +47,8 @@ from openmm.unit import (
 )
 from openff.toolkit.topology import Molecule
 
+from openmmtools import alchemy
+
 
 from openmmml.models.mace_potential import MacePotentialImplFactory
 from openmmml.models.anipotential import ANIPotentialImplFactory
@@ -236,6 +238,7 @@ class MACESystemBase(ABC):
             step=True,
             time=True,
             potentialEnergy=True,
+            density=True,
             temperature=True,
             speed=True,
         )
@@ -244,7 +247,6 @@ class MACESystemBase(ABC):
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=False,
             )
         )
         dcd_reporter = DCDReporter(
@@ -286,6 +288,7 @@ class MACESystemBase(ABC):
         self,
         replicas: int,
         restart: bool,
+        decouple: bool,
         steps: int,
         intervals_per_lambda_window: int = 10,
         steps_per_equilibration_interval: int = 100,
@@ -304,6 +307,7 @@ class MACESystemBase(ABC):
             temperature=self.temperature * kelvin,
             n_states=replicas,
             restart=restart,
+            decouple=decouple,
             mcmc_moves_kwargs={
                 "timestep": 1.0 * femtoseconds,
                 "collision_rate": 1.0 / picoseconds,
@@ -375,6 +379,20 @@ class MACESystemBase(ABC):
         )
 
         return meta
+    
+    def decouple_long_range(self, system: System, solute_indices: List) -> System:
+        """Create an alchemically modified system with the lambda parameters to decouple the steric and electrostatic components of the forces according to their respective lambda parameters
+
+        :param System system: the openMM system to test
+        :param List solute_indices: the list of indices to treat as the alchemical region (i.e. the ligand to be decoupled from solvent)
+        :return System: Alchemically modified version of the system with additional lambda parameters for the 
+        """
+        factory = alchemy.AbsoluteAlchemicalFactory(alchemical_pme_treatment='direct-space')
+
+        alchemical_region = alchemy.AlchemicalRegion(alchemical_atoms=solute_indices, annihilate_electrostatics=False, annihilate_sterics=False)
+        alchemical_system = factory.create_alchemical_system(system, alchemical_region)
+
+        return alchemical_system
 
     def run_neq_switching(self, steps: int, interval: int) -> float:
         """Compute the protocol work performed by switching from the MM description to the MM/ML through lambda_interpolate
@@ -454,7 +472,7 @@ class MixedSystem(MACESystemBase):
         dtype: torch.dtype,
         neighbour_list: str,
         output_dir: str,
-        system_type: str = "hybrid",
+        decouple: bool,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
@@ -484,6 +502,7 @@ class MixedSystem(MACESystemBase):
         self.nnpify_type = nnpify_type
         self.cv1 = cv1
         self.cv2 = cv2
+        self.decouple = decouple
 
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -492,16 +511,15 @@ class MixedSystem(MACESystemBase):
             file=file,
             ml_mol=ml_mol,
             model_path=model_path,
-            system_type=system_type,
             pressure=pressure,
         )
+
 
     def create_system(
         self,
         file: str,
         model_path: str,
         ml_mol: str,
-        system_type: str,
         pressure: Optional[float],
     ) -> None:
         """Creates the mixed system from a purely mm system
@@ -519,8 +537,6 @@ class MixedSystem(MACESystemBase):
             input_file = PDBFile(file)
             topology = input_file.getTopology()
 
-            # if pure_ml_system specified, we just need to parse the input file
-            # if not pure_ml_system:
             self.modeller = Modeller(input_file.topology, input_file.positions)
             logger.info(f"Initialized topology with {len(input_file.positions)} positions")
 
@@ -574,7 +590,7 @@ class MixedSystem(MACESystemBase):
             PDBFile.writeFile(
                 self.modeller.topology, self.modeller.getPositions(), file=f
             )
-        if system_type == "hybrid":
+        if not self.decouple:
             logger.debug("Creating hybrid system")
             self.system = MixedSystemConstructor(
                 system=system,
@@ -589,23 +605,25 @@ class MixedSystem(MACESystemBase):
             ).mixed_system
 
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
-        elif system_type == "decoupled":
+        else:
             # TODO: implement decoupled system for VdW/coulomb forces
-            raise NotImplementedError
-            logger.debug("Creating decoupled system")
-            self.mixed_system = MixedSystemConstructor(
+            logger.info("Creating decoupled system")
+            self.system = MixedSystemConstructor(
                 system=system,
                 topology=self.modeller.topology,
-                nnpify_resname=self.resname,
+                nnpify_type=self.nnpify_type,
+                nnpify_id=self.resname,
                 nnp_potential=self.potential,
+                # cannot have the lambda parameter for this as well as the electrostatics/sterics being decoupled
+                interpolate=False,
                 atoms_obj=atoms,
                 filename=model_path,
                 dtype=self.dtype,
                 nl=self.neighbour_list,
-            ).decoupled_system
+            ).mixed_system
 
-        else:
-            raise ValueError(f"system type {system_type} not recognised - aborting!")
+            self.system = self.decouple_long_range(self.system, solute_indices=get_atoms_from_resname(self.modeller.topology, self.resname, self.nnpify_type))
+
 
 
 class PureSystem(MACESystemBase):
@@ -623,11 +641,12 @@ class PureSystem(MACESystemBase):
 
     def __init__(
         self,
-        file: str,
+        ml_mol: str,
         model_path: str,
         potential: str,
         output_dir: str,
         temperature: float,
+        file: Optional[str] = None,
         boxsize: Optional[int] = None,
         pressure: Optional[float] = None,
         dtype: torch.dtype = torch.float64,
@@ -638,7 +657,8 @@ class PureSystem(MACESystemBase):
     ) -> None:
 
         super().__init__(
-            file=file,
+            # if file is None, we don't need  to create a topology, so we can pass the ml_mol
+            file=ml_mol if file is None else file,
             model_path=model_path,
             potential=potential,
             output_dir=output_dir,
@@ -654,11 +674,11 @@ class PureSystem(MACESystemBase):
 
         self.boxsize = boxsize
 
-        self.create_system(file=file, model_path=model_path, pressure=pressure)
+        self.create_system(ml_mol=ml_mol, model_path=model_path, pressure=pressure)
 
     def create_system(
         self,
-        file: str,
+        ml_mol: str,
         model_path: str,
         pressure: Optional[float],
     ) -> None:
@@ -669,8 +689,8 @@ class PureSystem(MACESystemBase):
         :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
         """
         # initialize the ase atoms for MACE
-        atoms = read(file)
-        if file.endswith(".xyz"):
+        atoms = read(ml_mol)
+        if ml_mol.endswith(".xyz"):
             pos = atoms.get_positions() / 10
             box_vectors = atoms.get_cell() / 10
             elements = atoms.get_chemical_symbols()
@@ -692,8 +712,8 @@ class PureSystem(MACESystemBase):
 
             self.modeller = Modeller(topology, pos)
 
-        elif file.endswith(".sdf"):
-            molecule = Molecule.from_file(file)
+        elif ml_mol.endswith(".sdf"):
+            molecule = Molecule.from_file( ml_mol)
             # input_file = molecule
             topology = molecule.to_topology().to_openmm()
             # Hold positions in nanometers

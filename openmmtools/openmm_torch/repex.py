@@ -4,7 +4,7 @@ import os
 from openmmml.mlpotential import MLPotential
 import openmm
 from openmm import unit, app
-from openmm.app import Topology
+from openmm.app import Topology, Modeller
 import time
 import mdtraj
 import numpy as np
@@ -14,8 +14,11 @@ from openmmtools import mcmc
 from openmmtools.mcmc import LangevinSplittingDynamicsMove
 from openmmtools.multistate import replicaexchange, multistatesampler
 from openmmtools.multistate.utils import NNPCompatibilityMixin
+from openmmtools.multistate.replicaexchange import ReplicaExchangeSampler
 from openmmtools.alchemy import NNPAlchemicalState
 from typing import Dict, Any, Iterable, Union, Optional, List
+from openmmtools.states import ThermodynamicState, CompoundThermodynamicState
+from openmmtools import alchemy, states
 import os
 import logging
 
@@ -90,10 +93,12 @@ class MixedSystemConstructor:
         self,
         system: openmm.System,
         topology: app.topology.Topology,
+        # TODO: should this be optional
         nnpify_id: Optional[str] = None,
         nnpify_type: str = "resname",
         nnp_potential: Optional[str] = "ani2x",
         implementation: Optional[str] = "nnpops",
+        interpolate: bool = True,
         **createMixedSystem_kwargs,
     ):
         """
@@ -103,6 +108,7 @@ class MixedSystemConstructor:
         self._topology = topology
         self._nnpify_id = nnpify_id
         self._implementation = implementation
+        self._interpolate = interpolate
 
         self._atom_indices = get_atoms_from_resname(topology, nnpify_id, nnpify_type)
         print(f"Treating atom indices {self._atom_indices} with ML potential")
@@ -118,7 +124,7 @@ class MixedSystemConstructor:
             system=self._system,
             atoms=self._atom_indices,
             implementation="nnpops",
-            interpolate=True,
+            interpolate=self._interpolate,
             **self._createMixedSystem_kwargs,
         )
 
@@ -138,6 +144,7 @@ class RepexConstructor:
         steps_per_equilibration_interval: int,
         equilibration_protocol: str,
         restart: bool = False,
+        decouple: bool = False,
         storage_kwargs: Dict = {
             "storage": "repex.nc",
             "checkpoint_interval": 10,
@@ -174,6 +181,7 @@ class RepexConstructor:
 
         # initial positions
         self._initial_positions = initial_positions
+        self._decouple = decouple
 
     @property
     def sampler(self):
@@ -203,15 +211,28 @@ class RepexConstructor:
             )
             _sampler.energy_context_cache = context_cache
             _sampler.sampler_context_cache = context_cache
-            _sampler.setup(
-                n_states=self._n_states,
-                mixed_system=self._mixed_system,
-                init_positions=self._initial_positions,
-                temperature=self._temperature,
-                storage_kwargs=self._storage_kwargs,
-                setup_equilibration_intervals=self._intervals_per_lambda_window,
-                equilibration_protocol=self._equilibration_protocol,
-                steps_per_setup_equilibration_interval=self._steps_per_equilibration_interval,
-                **self._extra_kwargs,
-            )
+            if not self._decouple:
+                _sampler.setup(
+                    n_states=self._n_states,
+                    mixed_system=self._mixed_system,
+                    init_positions=self._initial_positions,
+                    temperature=self._temperature,
+                    storage_kwargs=self._storage_kwargs,
+                    setup_equilibration_intervals=self._intervals_per_lambda_window,
+                    equilibration_protocol=self._equilibration_protocol,
+                    steps_per_setup_equilibration_interval=self._steps_per_equilibration_interval,
+                    **self._extra_kwargs,
+                )
+            else:
+                _sampler.setup_decouple(
+                    n_states=self._n_states,
+                    mixed_system=self._mixed_system,
+                    init_positions=self._initial_positions,
+                    temperature=self._temperature,
+                    storage_kwargs=self._storage_kwargs,
+                    setup_equilibration_intervals=self._intervals_per_lambda_window,
+                    equilibration_protocol=self._equilibration_protocol,
+                    steps_per_setup_equilibration_interval=self._steps_per_equilibration_interval,
+                    **self._extra_kwargs,
+                )
         return _sampler

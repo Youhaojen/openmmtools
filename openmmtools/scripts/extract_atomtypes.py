@@ -1,7 +1,8 @@
 from argparse import ArgumentParser
 import os
 import subprocess
-from rdkit.Chem.rdmolfiles import MolToXYZFile, MolToMolBlock, MolFromXYZFile
+from rdkit.Chem.rdmolfiles import MolToXYZFile, MolToMolFile, MolFromXYZFile
+from rdkit import Chem
 from ase.io import read, write
 from ase.io.extxyz import write_extxyz
 from tqdm import tqdm
@@ -19,6 +20,7 @@ from openmmforcefields.generators import SMIRNOFFTemplateGenerator
 from copy import deepcopy
 from openmm.unit import elementary_charge
 from shutil import rmtree
+from tempfile import mkdtemp
 
 
 # def extract_atomtypes(values: Tuple[int,  Atoms]):
@@ -51,7 +53,7 @@ from shutil import rmtree
 #         # smiles = mol.info['smiles']
 
 #         # molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
-        
+
 #         forcefield = ForceField("openff_unconstrained-2.0.0.offxml")
 #         partial_charges = forcefield.get_partial_charges(molecule)
 #         mol.arrays["am1bcc_charges"] = partial_charges
@@ -81,39 +83,58 @@ from shutil import rmtree
 #         return None
 
 
-
-
-
-
-    
-
-
 def extract_atomtypes(values: Tuple[int, Atoms]):
     (idx, mol) = values
     old_dir = os.getcwd()
     try:
-        output_dir = os.path.join(os.getcwd(), f"mol_processing_{idx}")
+        # output_dir = os.path.join(os.getcwd(), f"mol_processing_{idx}")
+        output_dir = mkdtemp(dir="./")
+        print(output_dir)
         os.makedirs(output_dir, exist_ok=True)
         os.chdir(output_dir)
-        with open( "mol.xyz", 'w') as f:
+        with open("mol.xyz", "w") as f:
             write(f, mol)
+        # smiles = mol.info["smiles"]
+        # molecule = Chem.MolFromSmiles(smiles, sanitize=True)
+        # print("molecule is", molecule)
+        # # write out mol2 file
+        # # convert mol to mol2
 
-        # write out mol2 file
-        # convert mol to mol2
-        cmd = f"obabel -ixyz mol.xyz -omol2 -O mol.mol2"
+        # MolToMolFile(molecule, "mol.mol2")
+            # f.write(MolToMol(molecule))
+        # convert the xyz robustly to sdf
+        cmd = f"python /home/jhm72/rds/hpc-work/software/xyz2mol/xyz2mol.py mol.xyz -o sdf > mol.sdf"
+
         subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        cmd = (
-            f"antechamber -fi mol2 -i mol.mol2 -c bcc -fo mol2 -o mol_processed.mol2 -dr n"
+        # convert sdf to mol2
+        cmd = f"obabel -isdf mol.sdf -omol2 -O mol.mol2"
+        subprocess.run(cmd, shell=True, check=True, capture_output=True)
+        # run espaloma charge
+        
+        # cmd = f"espaloma_charge -i mol.mol2 -o in.crg"
+        # output = subprocess.run(
+        #     cmd, capture_output=True, universal_newlines=True, shell=True
+        # )
+        # if output.returncode != 0:
+        #     print("espaloma_charge failed")
+        #     print(output.stderr)
+        cmd = f"antechamber -fi mol2 -i mol.mol2 -c bcc -fo mol2 -o mol_processed.mol2 -dr n"
+        output = subprocess.run(
+            cmd, capture_output=True, universal_newlines=True, shell=True
         )
+        if output.returncode != 0:
+            print("antechamber failed")
+        
+        # for line in output.stdout.splitlines():
+        # print(line)
+        cmd = "cat mol_processed.mol2 | grep UNL | awk '{ print $6 } ' > atomtypes.txt"
         subprocess.run(
             cmd, capture_output=True, universal_newlines=True, check=True, shell=True
         )
-        # for line in output.stdout.splitlines():
-            # print(line)
-        cmd = "cat mol_processed.mol2 | grep UNL | awk '{ print $6 } ' > atomtypes.txt"
-        subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True, shell=True)
         cmd = "cat mol_processed.mol2 | grep UNL | awk '{ print $9 } ' > partial_charges.txt"
-        subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True, shell=True)
+        subprocess.run(
+            cmd, capture_output=True, universal_newlines=True, check=True, shell=True
+        )
         with open("atomtypes.txt", "r") as f:
             # it captures an extra line at the bottom of the mol2 that we don't need
             atomtypes = [l.strip() for l in f.readlines()[:-1]]
@@ -129,7 +150,7 @@ def extract_atomtypes(values: Tuple[int, Atoms]):
         print("done")
         return mol
     except Exception as e:
-        rmtree(output_dir)
+        # rmtree(output_dir)
         os.chdir(old_dir)
         print(e)
 
@@ -138,15 +159,14 @@ def main():
     parser = ArgumentParser()
     parser.add_argument("-f", "--file")
     parser.add_argument("--nprocs", "-n", type=int, default=1)
+    parser.add_argument("--output_file", "-o")
 
     args = parser.parse_args()
     # mols = [f for f in os.listdir(args.directory) if f.endswith(".xyz")]
 
-
     mols = read(args.file, index=":")
 
     print(f"Extracting atomtypes for {len(mols)} configs")
-
 
     # write mol out to mol2, do the conversion, also convert to ase atoms
 
@@ -160,14 +180,11 @@ def main():
     configs = p.map(extract_atomtypes, values)
     configs = [c for c in configs if c is not None]
     print(len(configs))
-        
 
-    with open("mols.xyz", 'w') as f:
+    with open(args.output_file, "w") as f:
         write(f, configs)
 
         # now we have atomtypes for thing in the mol, just append them as an extra data field to the atoms object
-
-
 
 
 if __name__ == "__main__":

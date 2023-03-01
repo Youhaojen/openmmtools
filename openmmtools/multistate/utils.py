@@ -4,6 +4,8 @@
 # MODULE DOCSTRING
 # ==============================================================================
 
+
+
 """
 Multistate Utilities
 ====================
@@ -314,6 +316,7 @@ class NNPCompatibilityMixin(object):
     """
     Mixin for subclasses of `MultistateSampler` that supports `openmm-ml` exchanges of `lambda_interpolate`
     """
+    # TODO - harry: generalise this to handle any lambda parameter that the alchemical system has been configured with so we can do electrostatic/steric decoupling with the opnmmtools framework
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -418,13 +421,8 @@ class NNPCompatibilityMixin(object):
             init_sampler_state.apply_to_context(eq_context)
             logger.info("Minimising initial state")
             openmm.LocalEnergyMinimizer.minimize(eq_context)  # don't forget to minimize
-            # eq_context.setVelocitiesToTemperature(temperature)
-            # logger.info("Propagating state zero for 5000 steps...")
-            # eq_integrator.step(10000)
-            logger.info("...done")
             # update from context for good measure
             init_sampler_state.update_from_context(eq_context)
-            # set velocities at appropriate temperature
 
             logger.info(f"making lambda states...")
             lambda_subinterval_schedule = np.linspace(
@@ -454,18 +452,8 @@ class NNPCompatibilityMixin(object):
                     f"Alchemical parameter {eq_context.getParameter('lambda_interpolate')}"
                 )
                 # step the integrator
-                # openmm.LocalEnergyMinimizer.minimize(eq_context)
                 eq_integrator.step(steps_per_setup_equilibration_interval)
-                # this seems to be stochastic, simply run the equilibration again
-                #     nan_counter += 1
-                #     # reset context
-                #     logger.info("Resetting context...")
-                #     eq_context.reinitialize()
-                #     logger.info("...done")
-                #     logger.info("Minimising...")
-                #     openmm.LocalEnergyMinimizer.minimize(eq_context)
-                #     eq_integrator.step(steps_per_setup_equilibration_interval)
-                # init_sampler_state.update_from_context(eq_context)  # update sampler_state
+                
 
                 if idx in subinterval_matching_idx:
                     print("Adding state", lambda_subinterval, "matching index", idx)
@@ -491,3 +479,40 @@ class NNPCompatibilityMixin(object):
             sampler_states=sampler_state_list,
             storage=reporter,
         )
+
+    def setup_decouple(self,
+        n_states,
+        mixed_system: System,
+        init_positions,
+        temperature,
+        storage_kwargs,
+        equilibration_protocol: str,
+        n_replicas=None,
+        lambda_schedule=None,
+        lambda_protocol=None,
+        setup_equilibration_intervals=None,
+        steps_per_setup_equilibration_interval=None,
+        **unused_kwargs,
+    ):
+
+        from openmmtools import alchemy
+        from openmmtools import states
+        from openmmtools.multistate.multistatereporter import MultiStateReporter
+
+        alchemical_state = alchemy.AlchemicalState.from_system(mixed_system)
+        print(alchemical_state.lambda_electrostatics, alchemical_state.lambda_sterics)
+        
+        # this reprocudes the lambda schedule from the FreeSolv paper - turn off electrostatics first, then sterics
+        # protocol = {'lambda_electrostatics': [1.0, 0.75, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        #              'lambda_sterics': [1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0.0]}
+        # simplified lambda scheudle for debugging
+        protocol = {
+            'lambda_electrostatics': [1.0, 0.75, 0.5, 0.25, 0.0, 0.0, 0.0,  0.0, 0.0],
+            'lambda_sterics':        [1.0, 1.0,  1.0, 1.0,  1.0, 0.75, 0.5, 0.25, 0.0]
+        }
+        thermostates = states.create_thermodynamic_state_protocol(mixed_system, protocol=protocol, composable_states=[alchemical_state], constants={"temperature": temperature})
+        print(type(thermostates[0]))
+        sampler_states = [states.SamplerState(positions=init_positions, box_vectors=mixed_system.getDefaultPeriodicBoxVectors()) for _ in thermostates]
+
+        reporter = MultiStateReporter(**storage_kwargs)
+        self.create(thermodynamic_states=thermostates, sampler_states=sampler_states,storage=reporter)

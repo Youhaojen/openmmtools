@@ -69,6 +69,7 @@ def main():
     parser.add_argument("--log_dir", default="./logs")
 
     parser.add_argument("--restart", action="store_true")
+    parser.add_argument("--decouple", help="tell the repex constructor to deal with decoupling sterics + electrostatics, instead of lambda_interpolate", default=False ,action="store_true")
     parser.add_argument(
         "--equil", type=str, choices=["minimise", "gentle"], default="minimise"
     )
@@ -145,8 +146,10 @@ def main():
         args.ml_mol = args.file
 
     if args.system_type == "pure":
+        # if we're running a pure system, we need to specify the ml_mol, args.file is only useful for metadynamics where we need the topology to extract the right CV atoms
         system = PureSystem(
             file=args.file,
+            ml_mol = args.ml_mol,
             model_path=args.model_path,
             potential=args.potential,
             output_dir=args.output_dir,
@@ -175,9 +178,9 @@ def main():
             dtype=dtype,
             output_dir=args.output_dir,
             neighbour_list=args.neighbour_list,
-            system_type=args.system_type,
             smff=args.smff,
             pressure=args.pressure,
+            decouple=args.decouple
         )
     if args.run_type == "md":
         system.run_mixed_md(
@@ -194,6 +197,7 @@ def main():
             restart=args.restart,
             steps=args.steps,
             equilibration_protocol=args.equil,
+            decouple=args.decouple
         )
     elif args.run_type == "neq":
         system.run_neq_switching(args.steps, args.interval)
