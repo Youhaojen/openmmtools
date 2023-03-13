@@ -4,8 +4,6 @@
 # MODULE DOCSTRING
 # ==============================================================================
 
-
-
 """
 Multistate Utilities
 ====================
@@ -31,6 +29,7 @@ import warnings
 import numpy as np
 import os
 from openmm.app.pdbfile import PDBFile
+from openmmtools import cache
 from openmm import System
 
 from pymbar import timeseries  # for statistical inefficiency analysis
@@ -355,9 +354,7 @@ class NNPCompatibilityMixin(object):
         from openmmtools import cache
 
         platform = get_fastest_platform(minimum_precision="mixed")
-        context_cache = cache.ContextCache(
-            capacity=None, time_to_live=None, platform=platform
-        )
+
         lambda_schedule = np.linspace(0.0, 1.0, n_states)
 
         platform = get_fastest_platform(minimum_precision="mixed")
@@ -453,7 +450,6 @@ class NNPCompatibilityMixin(object):
                 )
                 # step the integrator
                 eq_integrator.step(steps_per_setup_equilibration_interval)
-                
 
                 if idx in subinterval_matching_idx:
                     print("Adding state", lambda_subinterval, "matching index", idx)
@@ -480,39 +476,109 @@ class NNPCompatibilityMixin(object):
             storage=reporter,
         )
 
-    def setup_decouple(self,
-        n_states,
+    def setup_decouple(
+        self,
         mixed_system: System,
         init_positions,
         temperature,
         storage_kwargs,
         equilibration_protocol: str,
-        n_replicas=None,
-        lambda_schedule=None,
-        lambda_protocol=None,
-        setup_equilibration_intervals=None,
-        steps_per_setup_equilibration_interval=None,
         **unused_kwargs,
     ):
 
         from openmmtools import alchemy
         from openmmtools import states
         from openmmtools.multistate.multistatereporter import MultiStateReporter
+        from openmmtools import cache
+        from copy import deepcopy
+        import openmm
 
+        from openmmtools.utils import get_fastest_platform
+        from openmmtools import cache
+
+        platform = get_fastest_platform(minimum_precision="mixed")
+
+        # create state from alchemical factory-produced system
         alchemical_state = alchemy.AlchemicalState.from_system(mixed_system)
         print(alchemical_state.lambda_electrostatics, alchemical_state.lambda_sterics)
-        
+
         # this reprocudes the lambda schedule from the FreeSolv paper - turn off electrostatics first, then sterics
-        # protocol = {'lambda_electrostatics': [1.0, 0.75, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #              'lambda_sterics': [1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0.0]}
+        protocol = {'lambda_electrostatics': [1.0, 0.75, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                     'lambda_sterics': [1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0.0]}
         # simplified lambda scheudle for debugging
-        protocol = {
-            'lambda_electrostatics': [1.0, 0.75, 0.5, 0.25, 0.0, 0.0, 0.0,  0.0, 0.0],
-            'lambda_sterics':        [1.0, 1.0,  1.0, 1.0,  1.0, 0.75, 0.5, 0.25, 0.0]
-        }
-        thermostates = states.create_thermodynamic_state_protocol(mixed_system, protocol=protocol, composable_states=[alchemical_state], constants={"temperature": temperature})
-        print(type(thermostates[0]))
-        sampler_states = [states.SamplerState(positions=init_positions, box_vectors=mixed_system.getDefaultPeriodicBoxVectors()) for _ in thermostates]
+        compound_thermostates = states.create_thermodynamic_state_protocol(
+            mixed_system,
+            protocol=protocol,
+            composable_states=[alchemical_state],
+            constants={"temperature": temperature},
+        )
+        sampler_states = [states.SamplerState(positions=init_positions, box_vectors=mixed_system.getDefaultPeriodicBoxVectors()) for _ in compound_thermostates]
+
+
+
+        # once we have the states, run a gentle equilibration protocolm, same as above, then save the states
+        init_sampler_state = states.SamplerState(
+            positions=init_positions,
+            box_vectors=mixed_system.getDefaultPeriodicBoxVectors(),
+        )
+        if equilibration_protocol == "gentle":
+            context_cache = cache.ContextCache(
+                capacity=None, time_to_live=None, platform=platform
+            )
+            # create a context
+            eq_context, eq_integrator = context_cache.get_context(
+                deepcopy(compound_thermostates[0]),
+                openmm.LangevinMiddleIntegrator(temperature, 1.0, 0.001),
+            )
+            # create sampler state
+
+            init_sampler_state.apply_to_context(eq_context)
+            logger.info("Minimising initial state")
+            openmm.LocalEnergyMinimizer.minimize(eq_context)
+            init_sampler_state.update_from_context(eq_context)
+
+            # equilibrate each state
+            for (thermostate, sampler_state) in zip(compound_thermostates, sampler_states):
+                thermostate.apply_to_context(eq_context)
+                logger.info(
+                    f"Alchemical parameter {eq_context.getParameter('lambda_sterics')}"
+                )
+                logger.info(
+                    f"Alchemical parameter {eq_context.getParameter('lambda_electrostatics')}"
+                )
+                # step the integrator
+                # openmm.LocalEnergyMinimizer.minimize(eq_context)
+                eq_integrator.step(500)
+                print("potential energy after equil", sampler_state._potential_energy)
+                # sampler_state.update_from_context(eq_context, ignore_velocities=True)
+                # thermostate_list.append(state)
+                # sampler_state_list.append(deepcopy(init_sampler_state))
+
+            del eq_context
+            del eq_integrator
+        # elif equilibration_protocol == "minimise":
+        #     # for idx, (coulomb, vdw) in enumerate(
+        #     #     zip(protocol["lambda_electrostatics"], protocol["lambda_sterics"])
+        #     # ):
+        #     for idx, state in enumerate(compound_thermostates):
+        #         logger.info(f"running lambda subinterval {idx}.")
+        #         # copy thermostate
+
+        #         # compound_thermostate_copy.set_alchemical_parameters(
+        #         #     lambda_electrostatics=coulomb,
+        #         #     lambda_sterics=vdw
+        #         # )
+        #         # compound_thermostate_copy.apply_to_context(eq_context)
+        #         # step the integrator
+        #         # openmm.LocalEnergyMinimizer.minimize(eq_context)
+        #         # eq_integrator.step(steps_per_setup_equilibration_interval)
+        #         logger.info(f"Adding state {idx} to repex")
+        #         thermostate_list.append(state)
+        #         sampler_state_list.append(deepcopy(init_sampler_state))
 
         reporter = MultiStateReporter(**storage_kwargs)
-        self.create(thermodynamic_states=thermostates, sampler_states=sampler_states,storage=reporter)
+        self.create(
+            thermodynamic_states=compound_thermostates,
+            sampler_states=sampler_states,
+            storage=reporter,
+        )

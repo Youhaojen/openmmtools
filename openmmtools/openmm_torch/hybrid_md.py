@@ -15,6 +15,7 @@ from openmm import (
     CustomTorsionForce,
     NoseHooverIntegrator,
 )
+from openmmtools.integrators import LangevinIntegrator as OpenMMToolsLangevinIntegrator
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
 from mdtraj.reporters import HDF5Reporter
@@ -180,7 +181,7 @@ class MACESystemBase(ABC):
         steps: int,
         interval: int,
         output_file: str,
-        restart: bool ,
+        restart: bool,
         run_metadynamics: bool = False,
         integrator_name: str = "langevin",
     ):
@@ -197,6 +198,10 @@ class MACESystemBase(ABC):
             integrator = NoseHooverIntegrator(
                 self.temperature, self.friction_coeff, self.timestep
             )
+        else:
+            raise ValueError(
+                f"Unrecognized integrator name {integrator_name}, must be one of ['langevin', 'nose-hoover']"
+            )
 
         if run_metadynamics:
             # if we have initialized from xyz, the topology won't have the information required to identify the cv indices, create from a pdb
@@ -206,6 +211,9 @@ class MACESystemBase(ABC):
                 topology=topology
                 # cv1_dsl_string=self.cv1_dsl_string, cv2_dsl_string=self.cv2_dsl_string
             )
+        # set alchemical state
+
+      
 
         logger.debug(f"Running mixed MD for {steps} steps")
         simulation = Simulation(
@@ -216,11 +224,11 @@ class MACESystemBase(ABC):
         )
         checkpoint_filepath = os.path.join(self.output_dir, output_file[:-4] + ".chk")
         if restart:
-            with open(checkpoint_filepath, 'rb') as f:
+            with open(checkpoint_filepath, "rb") as f:
                 logger.info("Loading simulation from checkpoint file...")
                 simulation.context.loadCheckpoint(f.read())
         else:
-            
+
             simulation.context.setPositions(self.modeller.getPositions())
             logging.info("Minimising energy...")
             simulation.minimizeEnergy()
@@ -247,6 +255,7 @@ class MACESystemBase(ABC):
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
+                enforcePeriodicBox=False,
             )
         )
         dcd_reporter = DCDReporter(
@@ -262,14 +271,18 @@ class MACESystemBase(ABC):
         # Add an extra hash to any existing checkpoint files
         checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith("#")]
         for file in checkpoint_files:
-            os.rename(os.path.join(self.output_dir, file), os.path.join(self.output_dir, f"{file}#"))
+            os.rename(
+                os.path.join(self.output_dir, file),
+                os.path.join(self.output_dir, f"{file}#"),
+            )
 
         # backup the existing checkpoint file
         if os.path.isfile(checkpoint_filepath):
             os.rename(checkpoint_filepath, checkpoint_filepath + "#")
-        checkpoint_reporter = CheckpointReporter(file=checkpoint_filepath, reportInterval=interval)
+        checkpoint_reporter = CheckpointReporter(
+            file=checkpoint_filepath, reportInterval=interval
+        )
         simulation.reporters.append(checkpoint_reporter)
-
 
         if run_metadynamics:
             logger.info("Running metadynamics")
@@ -291,7 +304,7 @@ class MACESystemBase(ABC):
         decouple: bool,
         steps: int,
         intervals_per_lambda_window: int = 10,
-        steps_per_equilibration_interval: int = 100,
+        steps_per_equilibration_interval: int = 1000,
         equilibration_protocol: str = "minimise",
     ) -> None:
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
@@ -309,10 +322,10 @@ class MACESystemBase(ABC):
             restart=restart,
             decouple=decouple,
             mcmc_moves_kwargs={
-                "timestep": 1.0 * femtoseconds,
-                "collision_rate": 1.0 / picoseconds,
+                "timestep": 0.5 * femtoseconds,
+                "collision_rate": 10.0 / picoseconds,
                 "n_steps": 1000,
-                "reassign_velocities": False,
+                "reassign_velocities":False,
                 "n_restart_attempts": 20,
             },
             replica_exchange_sampler_kwargs={
@@ -336,6 +349,7 @@ class MACESystemBase(ABC):
             logging.info("Minimizing system...")
             t1 = time.time()
             sampler.minimize()
+            # just run a few steps to make sure the system is in a reasonable conformation
 
             logging.info(f"Minimised system  in {time.time() - t1} seconds")
             # we want to write out the positions after the minimisation - possibly something weird is going wrong here and it's ending up in a weird conformation
@@ -379,17 +393,23 @@ class MACESystemBase(ABC):
         )
 
         return meta
-    
+
     def decouple_long_range(self, system: System, solute_indices: List) -> System:
         """Create an alchemically modified system with the lambda parameters to decouple the steric and electrostatic components of the forces according to their respective lambda parameters
 
         :param System system: the openMM system to test
         :param List solute_indices: the list of indices to treat as the alchemical region (i.e. the ligand to be decoupled from solvent)
-        :return System: Alchemically modified version of the system with additional lambda parameters for the 
+        :return System: Alchemically modified version of the system with additional lambda parameters for the
         """
-        factory = alchemy.AbsoluteAlchemicalFactory(alchemical_pme_treatment='direct-space')
+        factory = alchemy.AbsoluteAlchemicalFactory(
+            alchemical_pme_treatment="exact"
+        )
 
-        alchemical_region = alchemy.AlchemicalRegion(alchemical_atoms=solute_indices, annihilate_electrostatics=False, annihilate_sterics=False)
+        alchemical_region = alchemy.AlchemicalRegion(
+            alchemical_atoms=solute_indices,
+            annihilate_electrostatics=True,
+            annihilate_sterics=True,
+        )
         alchemical_system = factory.create_alchemical_system(system, alchemical_region)
 
         return alchemical_system
@@ -473,6 +493,7 @@ class MixedSystem(MACESystemBase):
         neighbour_list: str,
         output_dir: str,
         decouple: bool,
+        interpolate: bool,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
@@ -503,6 +524,7 @@ class MixedSystem(MACESystemBase):
         self.cv1 = cv1
         self.cv2 = cv2
         self.decouple = decouple
+        self.interpolate = interpolate
 
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -513,7 +535,6 @@ class MixedSystem(MACESystemBase):
             model_path=model_path,
             pressure=pressure,
         )
-
 
     def create_system(
         self,
@@ -538,7 +559,9 @@ class MixedSystem(MACESystemBase):
             topology = input_file.getTopology()
 
             self.modeller = Modeller(input_file.topology, input_file.positions)
-            logger.info(f"Initialized topology with {len(input_file.positions)} positions")
+            logger.info(
+                f"Initialized topology with {len(input_file.positions)} positions"
+            )
 
         # Handle a small molecule/small periodic system, passed as an sdf or xyz
         elif file.endswith(".sdf") or file.endswith(".xyz"):
@@ -599,6 +622,7 @@ class MixedSystem(MACESystemBase):
                 nnp_potential=self.potential,
                 nnpify_type=self.nnpify_type,
                 atoms_obj=atoms,
+                interpolate=self.interpolate,
                 filename=model_path,
                 dtype=self.dtype,
                 nl=self.neighbour_list,
@@ -622,8 +646,12 @@ class MixedSystem(MACESystemBase):
                 nl=self.neighbour_list,
             ).mixed_system
 
-            self.system = self.decouple_long_range(self.system, solute_indices=get_atoms_from_resname(self.modeller.topology, self.resname, self.nnpify_type))
-
+            self.system = self.decouple_long_range(
+                self.system,
+                solute_indices=get_atoms_from_resname(
+                    self.modeller.topology, self.resname, self.nnpify_type
+                ),
+            )
 
 
 class PureSystem(MACESystemBase):
@@ -713,7 +741,7 @@ class PureSystem(MACESystemBase):
             self.modeller = Modeller(topology, pos)
 
         elif ml_mol.endswith(".sdf"):
-            molecule = Molecule.from_file( ml_mol)
+            molecule = Molecule.from_file(ml_mol)
             # input_file = molecule
             topology = molecule.to_topology().to_openmm()
             # Hold positions in nanometers
@@ -737,7 +765,9 @@ class PureSystem(MACESystemBase):
         )
 
         if pressure is not None:
-            logger.info(f"Pressure will be maintained at {pressure} bar with MC barostat")
+            logger.info(
+                f"Pressure will be maintained at {pressure} bar with MC barostat"
+            )
             barostat = MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
             # barostat.setFrequency(25)  25 timestep is the default
             self.system.addForce(barostat)

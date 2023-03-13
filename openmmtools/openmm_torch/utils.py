@@ -27,11 +27,15 @@ def initialize_mm_forcefield(
     smff: str = "openff_unconstrained-1.0.0.offxml",
 ) -> ForceField:
 
+
     forcefield = ForceField(*forcefields)
     if molecule is not None:
-        # Ensure we use unconstrained force field
-        smirnoff = SMIRNOFFTemplateGenerator(molecules=molecule, forcefield=smff)
-        forcefield.registerTemplateGenerator(smirnoff.generator)
+        if isinstance(molecule, Molecule):
+            molecule = [molecule]
+        for mol in molecule:
+            print(f"Adding {mol} to forcefield")
+            smirnoff = SMIRNOFFTemplateGenerator(molecules=mol, forcefield=smff)
+            forcefield.registerTemplateGenerator(smirnoff.generator)
     return forcefield
 
 

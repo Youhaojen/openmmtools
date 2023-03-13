@@ -86,6 +86,7 @@ def assert_no_residue_constraints(system: openmm.System, atoms: Iterable[int]):
         )
 
 
+
 class MixedSystemConstructor:
     """simple handler to make vanilla `openmm.System` objects a mixedSystem with an `openmm.TorchForce`"""
 
@@ -93,11 +94,10 @@ class MixedSystemConstructor:
         self,
         system: openmm.System,
         topology: app.topology.Topology,
-        # TODO: should this be optional
-        nnpify_id: Optional[str] = None,
+        nnpify_id: str,
         nnpify_type: str = "resname",
-        nnp_potential: Optional[str] = "ani2x",
-        implementation: Optional[str] = "nnpops",
+        nnp_potential: str = "ani2x",
+        implementation: str = "nnpops",
         interpolate: bool = True,
         **createMixedSystem_kwargs,
     ):
@@ -112,9 +112,10 @@ class MixedSystemConstructor:
 
         self._atom_indices = get_atoms_from_resname(topology, nnpify_id, nnpify_type)
         print(f"Treating atom indices {self._atom_indices} with ML potential")
-        assert_no_residue_constraints(system, self._atom_indices)
+        assert_no_residue_constraints(system,self._atom_indices)
         self._nnp_potential_str = nnp_potential
         self._nnp_potential = MLPotential(self._nnp_potential_str)
+        # pop the atoms_obj from the kwargs
         self._createMixedSystem_kwargs = createMixedSystem_kwargs
 
     @property
@@ -143,27 +144,12 @@ class RepexConstructor:
         intervals_per_lambda_window: int,
         steps_per_equilibration_interval: int,
         equilibration_protocol: str,
-        restart: bool = False,
+        mcmc_moves_kwargs: Optional[Dict],
+        storage_kwargs,
+        replica_exchange_sampler_kwargs,
         decouple: bool = False,
-        storage_kwargs: Dict = {
-            "storage": "repex.nc",
-            "checkpoint_interval": 10,
-            "analysis_particle_indices": None,
-        },
-        mcmc_moves: Optional[
-            mcmc.MCMCMove
-        ] = mcmc.LangevinDynamicsMove,  # MiddleIntegrator
-        mcmc_moves_kwargs: Optional[Dict] = {
-            "timestep": 1.0 * unit.femtoseconds,
-            "collision_rate": 1.0 / unit.picoseconds,
-            "n_steps": 1000,
-            "reassign_velocities": False,
-        },
-        replica_exchange_sampler_kwargs: Optional[Dict] = {
-            "number_of_iterations": 5000,
-            "online_analysis_interval": 10,
-            "online_analysis_minimum_iterations": 10,
-        },
+        restart: bool = False,
+        mcmc_moves: Optional[mcmc.MCMCMove] = mcmc.LangevinDynamicsMove,  # MiddleIntegrator
         **kwargs,
     ):
         self._mixed_system = mixed_system

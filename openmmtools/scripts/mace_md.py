@@ -69,7 +69,12 @@ def main():
     parser.add_argument("--log_dir", default="./logs")
 
     parser.add_argument("--restart", action="store_true")
-    parser.add_argument("--decouple", help="tell the repex constructor to deal with decoupling sterics + electrostatics, instead of lambda_interpolate", default=False ,action="store_true")
+    parser.add_argument(
+        "--decouple",
+        help="tell the repex constructor to deal with decoupling sterics + electrostatics, instead of lambda_interpolate",
+        default=False,
+        action="store_true",
+    )
     parser.add_argument(
         "--equil", type=str, choices=["minimise", "gentle"], default="minimise"
     )
@@ -144,12 +149,17 @@ def main():
     # we don't need to specify the file twice if dealing with just the ligand
     if args.file.endswith(".sdf") and args.ml_mol is None:
         args.ml_mol = args.file
+    
+    
+    # Only need interpolation when running repex and not decoupling
+    interpolate = True if (args.run_type == "repex" and not args.decouple) else False
+    print("Interpolate: ", interpolate)
 
     if args.system_type == "pure":
         # if we're running a pure system, we need to specify the ml_mol, args.file is only useful for metadynamics where we need the topology to extract the right CV atoms
         system = PureSystem(
             file=args.file,
-            ml_mol = args.ml_mol,
+            ml_mol=args.ml_mol,
             model_path=args.model_path,
             potential=args.potential,
             output_dir=args.output_dir,
@@ -180,7 +190,8 @@ def main():
             neighbour_list=args.neighbour_list,
             smff=args.smff,
             pressure=args.pressure,
-            decouple=args.decouple
+            decouple=args.decouple,
+            interpolate=interpolate,
         )
     if args.run_type == "md":
         system.run_mixed_md(
@@ -189,7 +200,7 @@ def main():
             args.output_file,
             run_metadynamics=args.meta,
             integrator_name=args.integrator,
-            restart=args.restart
+            restart=args.restart,
         )
     elif args.run_type == "repex":
         system.run_repex(
@@ -197,7 +208,7 @@ def main():
             restart=args.restart,
             steps=args.steps,
             equilibration_protocol=args.equil,
-            decouple=args.decouple
+            decouple=args.decouple,
         )
     elif args.run_type == "neq":
         system.run_neq_switching(args.steps, args.interval)
