@@ -327,7 +327,7 @@ class MACESystemBase(ABC):
             restart=restart,
             decouple=decouple,
             mcmc_moves_kwargs={
-                "timestep": 0.5 * femtoseconds,
+                "timestep": 1.0 * femtoseconds,
                 "collision_rate": 10.0 / picoseconds,
                 "n_steps": 1000,
                 "reassign_velocities":False,
@@ -340,7 +340,7 @@ class MACESystemBase(ABC):
             },
             storage_kwargs={
                 "storage": os.path.join(self.output_dir, "repex.nc"),
-                "checkpoint_interval": 1,
+                "checkpoint_interval": 10,
                 "analysis_particle_indices": get_atoms_from_resname(
                     topology=self.modeller.topology,
                     nnpify_id=self.resname,
