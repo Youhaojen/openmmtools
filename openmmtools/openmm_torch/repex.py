@@ -95,6 +95,7 @@ class MixedSystemConstructor:
         system: openmm.System,
         topology: app.topology.Topology,
         nnpify_id: str,
+        model_path: str,
         nnpify_type: str = "resname",
         nnp_potential: str = "ani2x",
         implementation: str = "nnpops",
@@ -114,7 +115,7 @@ class MixedSystemConstructor:
         print(f"Treating atom indices {self._atom_indices} with ML potential")
         assert_no_residue_constraints(system,self._atom_indices)
         self._nnp_potential_str = nnp_potential
-        self._nnp_potential = MLPotential(self._nnp_potential_str)
+        self._nnp_potential = MLPotential(self._nnp_potential_str, model_path=model_path)
         # pop the atoms_obj from the kwargs
         self._createMixedSystem_kwargs = createMixedSystem_kwargs
 

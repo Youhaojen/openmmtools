@@ -51,7 +51,7 @@ from openff.toolkit.topology import Molecule
 from openmmtools import alchemy
 
 
-from openmmml.models.mace_potential import MacePotentialImplFactory
+from openmmml.models.macepotential import MACEPotentialImplFactory
 from openmmml.models.anipotential import ANIPotentialImplFactory
 from openmmml import MLPotential
 
@@ -82,7 +82,7 @@ def get_xyz_from_mol(mol):
     return xyz
 
 
-MLPotential.registerImplFactory("mace", MacePotentialImplFactory())
+MLPotential.registerImplFactory("mace", MACEPotentialImplFactory())
 MLPotential.registerImplFactory("ani2x", ANIPotentialImplFactory())
 
 logger = logging.getLogger("INFO")
@@ -95,11 +95,11 @@ class MACESystemBase(ABC):
     timestep: float
     dtype: torch.dtype
     output_dir: str
-    neighbour_list: str
     openmm_precision: str
     SM_FF: str
     modeller: Modeller
     system: System
+    mm_only:bool
 
     def __init__(
         self,
@@ -110,10 +110,11 @@ class MACESystemBase(ABC):
         temperature: float,
         pressure: Optional[float] = None,
         dtype: torch.dtype = torch.float64,
-        neighbour_list: str = "torch_nl_n2",
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
+        minimise: bool = True,
+        mm_only:bool = False
     ) -> None:
         super().__init__()
 
@@ -126,7 +127,8 @@ class MACESystemBase(ABC):
         self.timestep = timestep * femtosecond
         self.dtype = dtype
         self.output_dir = output_dir
-        self.neighbour_list = neighbour_list
+        self.mm_only = mm_only
+        self.minimise = minimise
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -230,15 +232,18 @@ class MACESystemBase(ABC):
         else:
 
             simulation.context.setPositions(self.modeller.getPositions())
-            logging.info("Minimising energy...")
-            simulation.minimizeEnergy()
-            minimised_state = simulation.context.getState(
-                getPositions=True, getVelocities=True, getForces=True
-            )
-            with open(os.path.join(self.output_dir, f"minimised_system.pdb"), "w") as f:
-                PDBFile.writeFile(
-                    self.modeller.topology, minimised_state.getPositions(), file=f
+            if self.minimise:
+                logging.info("Minimising energy...")
+                simulation.minimizeEnergy()
+                minimised_state = simulation.context.getState(
+                    getPositions=True, getVelocities=True, getForces=True
                 )
+                with open(os.path.join(self.output_dir, f"minimised_system.pdb"), "w") as f:
+                    PDBFile.writeFile(
+                        self.modeller.topology, minimised_state.getPositions(), file=f
+                    )
+            else:
+                logger.info("Skipping minimisation step")
 
         reporter = StateDataReporter(
             file=sys.stdout,
@@ -475,6 +480,8 @@ class MixedSystem(MACESystemBase):
     resname: str
     nnpify_type: str
     mixed_system: System
+    minimise: bool
+    water_model: str
 
     def __init__(
         self,
@@ -490,13 +497,15 @@ class MixedSystem(MACESystemBase):
         potential: str,
         temperature: float,
         dtype: torch.dtype,
-        neighbour_list: str,
         output_dir: str,
         decouple: bool,
         interpolate: bool,
+        minimise: bool,
+        mm_only: bool,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
+        water_model: str = "tip3p",
         pressure: Optional[float] = None,
         cv1: Optional[str] = None,
         cv2: Optional[str] = None,
@@ -509,10 +518,11 @@ class MixedSystem(MACESystemBase):
             temperature=temperature,
             pressure=pressure,
             dtype=dtype,
-            neighbour_list=neighbour_list,
             friction_coeff=friction_coeff,
             timestep=timestep,
             smff=smff,
+            minimise=minimise,
+            mm_only=mm_only,
         )
 
         self.forcefields = forcefields
@@ -523,6 +533,7 @@ class MixedSystem(MACESystemBase):
         self.nnpify_type = nnpify_type
         self.cv1 = cv1
         self.cv2 = cv2
+        self.water_model = water_model
         self.decouple = decouple
         self.interpolate = interpolate
 
@@ -577,8 +588,11 @@ class MixedSystem(MACESystemBase):
         forcefield = initialize_mm_forcefield(
             molecule=molecule, forcefields=self.forcefields, smff=self.SM_FF
         )
+        if "tip4p" in self.water_model:
+            modeller.addExtraParticles(forcefield)
         self.modeller.addSolvent(
             forcefield,
+            model=self.water_model,
             padding=self.padding * nanometers,
             ionicStrength=self.ionicStrength * molar,
             neutralize=True,
@@ -613,38 +627,43 @@ class MixedSystem(MACESystemBase):
             PDBFile.writeFile(
                 self.modeller.topology, self.modeller.getPositions(), file=f
             )
+        
         if not self.decouple:
-            logger.debug("Creating hybrid system")
-            self.system = MixedSystemConstructor(
-                system=system,
-                topology=self.modeller.topology,
-                nnpify_id=self.resname,
-                nnp_potential=self.potential,
-                nnpify_type=self.nnpify_type,
-                atoms_obj=atoms,
-                interpolate=self.interpolate,
-                filename=model_path,
-                dtype=self.dtype,
-                nl=self.neighbour_list,
-            ).mixed_system
+            if self.mm_only:
+                self.system = system
+            else:
+                logger.debug("Creating hybrid system")
+                self.system = MixedSystemConstructor(
+                    system=system,
+                    topology=self.modeller.topology,
+                    nnpify_id=self.resname,
+                    model_path=model_path,
+                    nnp_potential=self.potential,
+                    nnpify_type=self.nnpify_type,
+                    atoms_obj=atoms,
+                    interpolate=self.interpolate,
+                    filename=model_path,
+                    dtype=self.dtype,
+                ).mixed_system
 
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
         else:
+            if not self.mm_only:
             # TODO: implement decoupled system for VdW/coulomb forces
-            logger.info("Creating decoupled system")
-            self.system = MixedSystemConstructor(
-                system=system,
-                topology=self.modeller.topology,
-                nnpify_type=self.nnpify_type,
-                nnpify_id=self.resname,
-                nnp_potential=self.potential,
-                # cannot have the lambda parameter for this as well as the electrostatics/sterics being decoupled
-                interpolate=False,
-                atoms_obj=atoms,
-                filename=model_path,
-                dtype=self.dtype,
-                nl=self.neighbour_list,
-            ).mixed_system
+                logger.info("Creating decoupled system")
+                self.system = MixedSystemConstructor(
+                    system=system,
+                    topology=self.modeller.topology,
+                    nnpify_type=self.nnpify_type,
+                    nnpify_id=self.resname,
+                    nnp_potential=self.potential,
+                    model_path=model_path,
+                    # cannot have the lambda parameter for this as well as the electrostatics/sterics being decoupled
+                    interpolate=False,
+                    atoms_obj=atoms,
+                    filename=model_path,
+                    dtype=self.dtype,
+                ).mixed_system
 
             self.system = self.decouple_long_range(
                 self.system,
@@ -661,7 +680,6 @@ class PureSystem(MACESystemBase):
     timestep: float
     dtype: torch.dtype
     output_dir: str
-    neighbour_list: str
     openmm_precision: str
     SM_FF: str
     modeller: Modeller
@@ -678,10 +696,10 @@ class PureSystem(MACESystemBase):
         boxsize: Optional[int] = None,
         pressure: Optional[float] = None,
         dtype: torch.dtype = torch.float64,
-        neighbour_list: str = "torch_nl_n2",
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
+        minimise: bool = True,
     ) -> None:
 
         super().__init__(
@@ -693,10 +711,10 @@ class PureSystem(MACESystemBase):
             temperature=temperature,
             pressure=pressure,
             dtype=dtype,
-            neighbour_list=neighbour_list,
             friction_coeff=friction_coeff,
             timestep=timestep,
             smff=smff,
+            minimise=minimise,
         )
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -759,9 +777,9 @@ class PureSystem(MACESystemBase):
         else:
             raise NotImplementedError
 
-        ml_potential = MLPotential("mace")
+        ml_potential = MLPotential("mace", model_path=model_path)
         self.system = ml_potential.createSystem(
-            topology, atoms_obj=atoms, filename=model_path, dtype=self.dtype
+            topology, atoms_obj=atoms, dtype=self.dtype
         )
 
         if pressure is not None:

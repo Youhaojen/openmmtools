@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--ionicStrength", "-i", default=0.15, type=float)
     parser.add_argument("--potential", default="mace", type=str)
     parser.add_argument("--temperature", type=float, default=298.15)
+    parser.add_argument("--minimise", action="store_true", default=True)
     parser.add_argument("--pressure", type=float, default=None)
     parser.add_argument(
         "--integrator",
@@ -83,10 +84,11 @@ def main():
         type=list,
         default=[
             "amber/protein.ff14SB.xml",
-            "amber/tip3p_standard.xml",
+            
             "amber14/DNA.OL15.xml",
         ],
     )
+    parser.add_argument("--water_model", type=str, default="tip3p")
     parser.add_argument(
         "--smff",
         help="which version of the openff small molecule forcefield to use",
@@ -105,16 +107,7 @@ def main():
         type=str,
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
-    # parser.add_argument(
-    #     "--cv1",
-    #     help="dsl string identifying atoms to be included in the cv1 torsion",
-    #     default=None,
-    # )
-    # parser.add_argument(
-    #     "--cv2",
-    #     help="dsl string identifying atoms to be included in the cv2 torsion",
-    #     default=None,
-    # )
+   
     parser.add_argument(
         "--model_path",
         "-m",
@@ -127,6 +120,7 @@ def main():
         choices=["pure", "hybrid", "decoupled"],
         default="pure",
     )
+    parser.add_argument("--mm_only", action="store_true", default=False)
     parser.add_argument(
         "--ml_selection",
         help="specify how the ML subset should be interpreted, either as a resname or a chain ",
@@ -149,8 +143,14 @@ def main():
     # we don't need to specify the file twice if dealing with just the ligand
     if args.file.endswith(".sdf") and args.ml_mol is None:
         args.ml_mol = args.file
-    
-    
+    # ADD THE WATER MODEL TO forcefield list
+    if args.water_model == "tip3p":
+        args.forcefields.append("amber/tip3p_standard.xml")
+    elif args.water_model == "tip4pew":
+        args.forcefields.append("amber/tip4pew.xml")
+    else:
+        raise ValueError(f"Water model {args.water_model} not recognised")
+
     # Only need interpolation when running repex and not decoupling
     interpolate = True if (args.run_type == "repex" and not args.decouple) else False
     print("Interpolate: ", interpolate)
@@ -166,10 +166,10 @@ def main():
             temperature=args.temperature,
             pressure=args.pressure,
             dtype=dtype,
-            neighbour_list=args.neighbour_list,
             timestep=args.timestep,
             smff=args.smff,
             boxsize=args.box,
+            minimise=args.minimise,
         )
 
     elif args.system_type == "hybrid":
@@ -187,11 +187,13 @@ def main():
             temperature=args.temperature,
             dtype=dtype,
             output_dir=args.output_dir,
-            neighbour_list=args.neighbour_list,
             smff=args.smff,
             pressure=args.pressure,
             decouple=args.decouple,
             interpolate=interpolate,
+            minimise=args.minimise,
+            mm_only=args.mm_only,
+            water_model = args.water_model,
         )
     if args.run_type == "md":
         system.run_mixed_md(
