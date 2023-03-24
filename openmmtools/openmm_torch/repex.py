@@ -86,7 +86,6 @@ def assert_no_residue_constraints(system: openmm.System, atoms: Iterable[int]):
         )
 
 
-
 class MixedSystemConstructor:
     """simple handler to make vanilla `openmm.System` objects a mixedSystem with an `openmm.TorchForce`"""
 
@@ -113,9 +112,11 @@ class MixedSystemConstructor:
 
         self._atom_indices = get_atoms_from_resname(topology, nnpify_id, nnpify_type)
         print(f"Treating atom indices {self._atom_indices} with ML potential")
-        assert_no_residue_constraints(system,self._atom_indices)
+        assert_no_residue_constraints(system, self._atom_indices)
         self._nnp_potential_str = nnp_potential
-        self._nnp_potential = MLPotential(self._nnp_potential_str, model_path=model_path)
+        self._nnp_potential = MLPotential(
+            self._nnp_potential_str, model_path=model_path
+        )
         # pop the atoms_obj from the kwargs
         self._createMixedSystem_kwargs = createMixedSystem_kwargs
 
@@ -150,7 +151,9 @@ class RepexConstructor:
         replica_exchange_sampler_kwargs,
         decouple: bool = False,
         restart: bool = False,
-        mcmc_moves: Optional[mcmc.MCMCMove] = mcmc.LangevinDynamicsMove,  # MiddleIntegrator
+        mcmc_moves: Optional[
+            mcmc.MCMCMove
+        ] = mcmc.LangevinDynamicsMove,  # MiddleIntegrator
         **kwargs,
     ):
         self._mixed_system = mixed_system

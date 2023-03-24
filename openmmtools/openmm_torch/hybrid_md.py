@@ -99,7 +99,7 @@ class MACESystemBase(ABC):
     SM_FF: str
     modeller: Modeller
     system: System
-    mm_only:bool
+    mm_only: bool
 
     def __init__(
         self,
@@ -114,7 +114,7 @@ class MACESystemBase(ABC):
         timestep: float = 1.0,
         smff: str = "1.0",
         minimise: bool = True,
-        mm_only:bool = False
+        mm_only: bool = False,
     ) -> None:
         super().__init__()
 
@@ -215,8 +215,6 @@ class MACESystemBase(ABC):
             )
         # set alchemical state
 
-      
-
         logger.debug(f"Running mixed MD for {steps} steps")
         simulation = Simulation(
             self.modeller.topology,
@@ -238,7 +236,9 @@ class MACESystemBase(ABC):
                 minimised_state = simulation.context.getState(
                     getPositions=True, getVelocities=True, getForces=True
                 )
-                with open(os.path.join(self.output_dir, f"minimised_system.pdb"), "w") as f:
+                with open(
+                    os.path.join(self.output_dir, f"minimised_system.pdb"), "w"
+                ) as f:
                     PDBFile.writeFile(
                         self.modeller.topology, minimised_state.getPositions(), file=f
                     )
@@ -330,7 +330,7 @@ class MACESystemBase(ABC):
                 "timestep": 1.0 * femtoseconds,
                 "collision_rate": 10.0 / picoseconds,
                 "n_steps": 1000,
-                "reassign_velocities":False,
+                "reassign_velocities": False,
                 "n_restart_attempts": 20,
             },
             replica_exchange_sampler_kwargs={
@@ -406,9 +406,7 @@ class MACESystemBase(ABC):
         :param List solute_indices: the list of indices to treat as the alchemical region (i.e. the ligand to be decoupled from solvent)
         :return System: Alchemically modified version of the system with additional lambda parameters for the
         """
-        factory = alchemy.AbsoluteAlchemicalFactory(
-            alchemical_pme_treatment="exact"
-        )
+        factory = alchemy.AbsoluteAlchemicalFactory(alchemical_pme_treatment="exact")
 
         alchemical_region = alchemy.AlchemicalRegion(
             alchemical_atoms=solute_indices,
@@ -627,7 +625,7 @@ class MixedSystem(MACESystemBase):
             PDBFile.writeFile(
                 self.modeller.topology, self.modeller.getPositions(), file=f
             )
-        
+
         if not self.decouple:
             if self.mm_only:
                 logger.info("Creating MM system")
@@ -650,7 +648,7 @@ class MixedSystem(MACESystemBase):
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
         else:
             if not self.mm_only:
-            # TODO: implement decoupled system for VdW/coulomb forces
+                # TODO: implement decoupled system for VdW/coulomb forces
                 logger.info("Creating decoupled system")
                 self.system = MixedSystemConstructor(
                     system=system,

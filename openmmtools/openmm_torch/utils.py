@@ -27,7 +27,6 @@ def initialize_mm_forcefield(
     smff: str = "openff_unconstrained-1.0.0.offxml",
 ) -> ForceField:
 
-
     forcefield = ForceField(*forcefields)
     if molecule is not None:
         if isinstance(molecule, Molecule):

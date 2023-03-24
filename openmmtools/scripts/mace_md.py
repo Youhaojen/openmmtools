@@ -84,7 +84,6 @@ def main():
         type=list,
         default=[
             "amber/protein.ff14SB.xml",
-            
             "amber14/DNA.OL15.xml",
         ],
     )
@@ -107,7 +106,7 @@ def main():
         type=str,
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
-   
+
     parser.add_argument(
         "--model_path",
         "-m",
@@ -150,7 +149,7 @@ def main():
         args.forcefields.append("amber/tip4pew.xml")
     else:
         raise ValueError(f"Water model {args.water_model} not recognised")
-    
+
     if args.mm_only and args.system_type == "pure":
         raise ValueError(
             "Cannot run a pure MACE system with only the MM forcefield - please use a hybrid system"
@@ -198,7 +197,7 @@ def main():
             interpolate=interpolate,
             minimise=args.minimise,
             mm_only=args.mm_only,
-            water_model = args.water_model,
+            water_model=args.water_model,
         )
     if args.run_type == "md":
         system.run_mixed_md(
