@@ -630,6 +630,7 @@ class MixedSystem(MACESystemBase):
         
         if not self.decouple:
             if self.mm_only:
+                logger.info("Creating MM system")
                 self.system = system
             else:
                 logger.debug("Creating hybrid system")

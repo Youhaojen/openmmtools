@@ -150,6 +150,11 @@ def main():
         args.forcefields.append("amber/tip4pew.xml")
     else:
         raise ValueError(f"Water model {args.water_model} not recognised")
+    
+    if args.mm_only and args.system_type == "pure":
+        raise ValueError(
+            "Cannot run a pure MACE system with only the MM forcefield - please use a hybrid system"
+        )
 
     # Only need interpolation when running repex and not decoupling
     interpolate = True if (args.run_type == "repex" and not args.decouple) else False
