@@ -12,11 +12,7 @@ cd build
 # pip install .
 # cd ..
 
-git clone https://github.com/jharrymoore/openmm-ml.git@mace
-cd openmm-ml
-pip install .
-cd ..
-
+pip install git+https://github.com/jharrymoore/openmm-ml.git@mace
 git clone https://github.com/ACEsuit/mace.git
 cd mace
 pip install .
