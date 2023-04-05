@@ -1625,33 +1625,37 @@ class MultiStateSampler(object):
                 replica_id + 1, self.n_replicas, initial_energy
             )
         )
-
+        logger.debug(
+            "Replica {}/{}: minimizing...".format(replica_id + 1, self.n_replicas)
+        )
         # Minimize energy.
-        try:
-            if max_iterations == 0:
-                logger.debug(
-                    "Using FIRE: tolerance {} minimizing to convergence".format(
-                        tolerance
-                    )
-                )
-                while integrator.getGlobalVariableByName("converged") < 1:
-                    integrator.step(50)
-            else:
-                logger.debug(
-                    "Using FIRE: tolerance {} max_iterations {}".format(
-                        tolerance, max_iterations
-                    )
-                )
-                integrator.step(max_iterations)
-        except Exception as e:
-            if str(e) == "Particle coordinate is nan":
-                logger.debug(
-                    "NaN encountered in FIRE minimizer; falling back to L-BFGS after resetting positions"
-                )
-                sampler_state.apply_to_context(context)
-                openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
-            else:
-                raise e
+        openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
+        # Minimize energy.
+        # try:
+        #     if max_iterations == 0:
+        #         logger.debug(
+        #             "Using FIRE: tolerance {} minimizing to convergence".format(
+        #                 tolerance
+        #             )
+        #         )
+        #         while integrator.getGlobalVariableByName("converged") < 1:
+        #             integrator.step(50)
+        #     else:
+        #         logger.debug(
+        #             "Using FIRE: tolerance {} max_iterations {}".format(
+        #                 tolerance, max_iterations
+        #             )
+        #         )
+        #         integrator.step(max_iterations)
+        # except Exception as e:
+        #     if str(e) == "Particle coordinate is nan":
+        #         logger.debug(
+        #             "NaN encountered in FIRE minimizer; falling back to L-BFGS after resetting positions"
+        #         )
+        #         sampler_state.apply_to_context(context)
+        #         openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
+        #     else:
+        #         raise e
 
         # Get the minimized positions.
         sampler_state.update_from_context(context)

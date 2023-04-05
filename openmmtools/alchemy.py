@@ -431,8 +431,29 @@ class NNPProtocol:
 
     default_functions = {"lambda_interpolate": lambda x: x}
 
-    def __init__(self, **unused_kwargs):
-        self.functions = copy.deepcopy(self.default_functions)
+    def __init__(self, temp_scale=None, **unused_kwargs):
+
+        """allow to encode a temp scaling"""
+        if temp_scale is not None:  # if the temp scale is not none, it must be a float
+            assert type(temp_scale) == float, f"temp scale is not a float"
+
+            def interREST_fn(x):
+                if x <= 0.5:
+                    out = -2.0 * x * (1.0 - temp_scale)
+                else:
+                    out = 2 * x * (1 - temp_scale) + 2 * temp_scale - 2
+                print("Output of interREST_fn is: ", out, x, temp_scale)
+                return out
+
+            self.functions = copy.deepcopy(self.default_functions)
+            # set the modified function as partialed with the `temp_scale`; need to check that this is right.
+            self.functions["lambda_interRest"] = interREST_fn
+        else:  # remove the temp scale
+            my_default_fns = copy.deepcopy(self.default_functions)
+            out_default_functions = {
+                "lambda_interpolate": my_default_fns["lambda_interpolate"]
+            }
+            self.functions = out_default_functions
 
 
 class NNPAlchemicalState(AlchemicalState):
@@ -444,12 +465,16 @@ class NNPAlchemicalState(AlchemicalState):
         pass
 
     lambda_interpolate = _LambdaParameter("lambda_interpolate")
+    lambda_interREST = _LambdaParameter(
+        "lambda_interREST"
+    )  # this is specific to the inter-REST region
 
     def set_alchemical_parameters(
-        self, global_lambda, lambda_protocol=NNPProtocol(), **unused_kwargs
+        self, global_lambda, lambda_protocol=NNPProtocol(1.5), **unused_kwargs
     ):
         self.global_lambda = global_lambda
         for parameter_name in lambda_protocol.functions:
+            print(parameter_name)
             lambda_value = lambda_protocol.functions[parameter_name](global_lambda)
             setattr(self, parameter_name, lambda_value)
 

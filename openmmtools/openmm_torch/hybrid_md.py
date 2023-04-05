@@ -29,6 +29,7 @@ from openmm.app import (
     PDBFile,
     Modeller,
     PME,
+    HBonds
 )
 from openmm.app.metadynamics import Metadynamics, BiasVariable
 from openmm.app.topology import Topology
@@ -115,6 +116,7 @@ class MACESystemBase(ABC):
         smff: str = "1.0",
         minimise: bool = True,
         mm_only: bool = False,
+        rest2: bool = False,
     ) -> None:
         super().__init__()
 
@@ -126,6 +128,7 @@ class MACESystemBase(ABC):
         self.friction_coeff = friction_coeff / picosecond
         self.timestep = timestep * femtosecond
         self.dtype = dtype
+        self.rest2 = rest2
         self.output_dir = output_dir
         self.mm_only = mm_only
         self.minimise = minimise
@@ -250,10 +253,14 @@ class MACESystemBase(ABC):
             reportInterval=interval,
             step=True,
             time=True,
+            totalEnergy=True,
             potentialEnergy=True,
             density=True,
+            volume=True,
             temperature=True,
             speed=True,
+            progress=True,
+            totalSteps=steps,
         )
         simulation.reporters.append(reporter)
         simulation.reporters.append(
@@ -311,6 +318,7 @@ class MACESystemBase(ABC):
         intervals_per_lambda_window: int = 10,
         steps_per_equilibration_interval: int = 1000,
         equilibration_protocol: str = "minimise",
+        checkpoint_interval: int = 10
     ) -> None:
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
         # even if restart has been set, disable if the checkpoint file was not found, enforce minimising the system
@@ -330,7 +338,7 @@ class MACESystemBase(ABC):
                 "timestep": 1.0 * femtoseconds,
                 "collision_rate": 10.0 / picoseconds,
                 "n_steps": 1000,
-                "reassign_velocities": False,
+                "reassign_velocities":False,
                 "n_restart_attempts": 20,
             },
             replica_exchange_sampler_kwargs={
@@ -340,7 +348,7 @@ class MACESystemBase(ABC):
             },
             storage_kwargs={
                 "storage": os.path.join(self.output_dir, "repex.nc"),
-                "checkpoint_interval": 10,
+                "checkpoint_interval": checkpoint_interval,
                 "analysis_particle_indices": get_atoms_from_resname(
                     topology=self.modeller.topology,
                     nnpify_id=self.resname,
@@ -500,6 +508,7 @@ class MixedSystem(MACESystemBase):
         interpolate: bool,
         minimise: bool,
         mm_only: bool,
+        rest2: bool,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
@@ -521,6 +530,7 @@ class MixedSystem(MACESystemBase):
             smff=smff,
             minimise=minimise,
             mm_only=mm_only,
+            rest2=rest2
         )
 
         self.forcefields = forcefields
@@ -610,7 +620,7 @@ class MixedSystem(MACESystemBase):
             self.modeller.topology,
             nonbondedMethod=PME,
             nonbondedCutoff=self.nonbondedCutoff * nanometer,
-            constraints=None,
+            constraints=None if "unconstrained" in self.SM_FF else HBonds,
         )
         if pressure is not None:
             logger.info(
@@ -643,6 +653,8 @@ class MixedSystem(MACESystemBase):
                     interpolate=self.interpolate,
                     filename=model_path,
                     dtype=self.dtype,
+                    T_high=450 * kelvin if self.rest2 else 300 * kelvin,
+                    T_low=300 * kelvin
                 ).mixed_system
 
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges

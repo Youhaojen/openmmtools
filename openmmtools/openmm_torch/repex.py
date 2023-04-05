@@ -194,6 +194,8 @@ class RepexConstructor:
                 f"Restarting simulation from file {self._storage_kwargs['storage']}"
             )
             _sampler = NNPRepexSampler.from_storage(self._storage_kwargs["storage"])
+            _sampler.energy_context_cache = context_cache
+            _sampler.sampler_context_cache = context_cache
         else:
             logging.info(f"Starting Repex sampling from scratch")
             _sampler = NNPRepexSampler(

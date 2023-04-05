@@ -343,7 +343,7 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         _n_proposed_matrix : array-like of float of shape [n_replicas, n_replicas]
             _n_accepted_matrix[from_state,to_state] is the number of proposed swaps
         """
-        raise ValueError
+        # raise ValueError
         for swap_attempt in range(nswap_attempts):
 
             # Choose random replicas uniformly to attempt to swap.

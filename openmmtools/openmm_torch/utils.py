@@ -17,6 +17,8 @@ def set_smff(smff: str) -> str:
         return "openff_unconstrained-1.0.0.offxml"
     elif smff == "2.0":
         return "openff_unconstrained-2.0.0.offxml"
+    elif smff == "2.0-constrained":
+        return "openff-2.0.0.offxml"
     else:
         raise ValueError(f"Small molecule forcefield {smff} not recognised")
 

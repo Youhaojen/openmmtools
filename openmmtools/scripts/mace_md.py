@@ -7,6 +7,9 @@ import logging
 import torch
 
 
+logging.getLogger('openmmtools.multistate').setLevel(logging.ERROR)
+
+
 def main():
     parser = ArgumentParser()
 
@@ -93,7 +96,7 @@ def main():
         help="which version of the openff small molecule forcefield to use",
         default="1.0",
         type=str,
-        choices=["1.0", "2.0"],
+        choices=["1.0", "2.0", "2.0-constrained"],
     )
     parser.add_argument(
         "--interval", help="steps between saved frames", type=int, default=100
@@ -106,7 +109,7 @@ def main():
         type=str,
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
-
+    parser.add_argument("--rest2", help="Switch on REST2", action="store_true")
     parser.add_argument(
         "--model_path",
         "-m",
@@ -198,6 +201,7 @@ def main():
             minimise=args.minimise,
             mm_only=args.mm_only,
             water_model=args.water_model,
+            rest2=args.rest2,
         )
     if args.run_type == "md":
         system.run_mixed_md(
@@ -215,6 +219,7 @@ def main():
             steps=args.steps,
             equilibration_protocol=args.equil,
             decouple=args.decouple,
+            checkpoint_interval=args.interval
         )
     elif args.run_type == "neq":
         system.run_neq_switching(args.steps, args.interval)

@@ -101,7 +101,7 @@ def extract_atomtypes(values: Tuple[int, Atoms]):
         # # convert mol to mol2
 
         # MolToMolFile(molecule, "mol.mol2")
-            # f.write(MolToMol(molecule))
+        # f.write(MolToMol(molecule))
         # convert the xyz robustly to sdf
         cmd = f"python /home/jhm72/rds/hpc-work/software/xyz2mol/xyz2mol.py mol.xyz -o sdf > mol.sdf"
 
@@ -110,7 +110,7 @@ def extract_atomtypes(values: Tuple[int, Atoms]):
         cmd = f"obabel -isdf mol.sdf -omol2 -O mol.mol2"
         subprocess.run(cmd, shell=True, check=True, capture_output=True)
         # run espaloma charge
-        
+
         # cmd = f"espaloma_charge -i mol.mol2 -o in.crg"
         # output = subprocess.run(
         #     cmd, capture_output=True, universal_newlines=True, shell=True
@@ -124,7 +124,7 @@ def extract_atomtypes(values: Tuple[int, Atoms]):
         )
         if output.returncode != 0:
             print("antechamber failed")
-        
+
         # for line in output.stdout.splitlines():
         # print(line)
         cmd = "cat mol_processed.mol2 | grep UNL | awk '{ print $6 } ' > atomtypes.txt"

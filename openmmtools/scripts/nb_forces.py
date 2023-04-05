@@ -48,15 +48,14 @@ toolkit_registry = EspalomaChargeToolkitWrapper()
 
 
 def extract_nonbonded_components(values):
-    t1 = time() 
+    t1 = time()
     (atoms, smff) = values
     # takes an ase atoms object and a smiles string, moves nonbonded components of the forcefield to a new forcegroup, runs a single step of the integrator, attaches np array of nb_forces to the atoms object
     # parsed_smiles = f.readlines()
     old_dir = os.getcwd()
     try:
-       
-        tmpdir = tempfile.mkdtemp()
 
+        tmpdir = tempfile.mkdtemp()
 
         with open(os.path.join(tmpdir, "mol.xyz"), "w") as f:
             write(f, atoms)
@@ -65,12 +64,10 @@ def extract_nonbonded_components(values):
         cmd = f"python $XYZ2MOL {os.path.join(tmpdir, 'mol.xyz')} -o sdf > {os.path.join(tmpdir, 'mol.sdf')}"
         os.system(cmd)
         subprocess.run(cmd, shell=True, check=True, capture_output=True, timeout=60)
-        
-
 
         cmd = f"obabel -isdf {os.path.join(tmpdir, 'mol.sdf')} -omol2 -O {os.path.join(tmpdir, 'mol.mol2')}"
         subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        
+
         os.chdir(tmpdir)
         # cmd = f"antechamber -nc {formal_charge} -fi mol2 -i {os.path.join(tmpdir, 'mol.mol2')} -c gas -fo mol2 -o {os.path.join(tmpdir, 'mol_processed.mol2')} -dr n"
         cmd = f"atomtype -i mol.mol2 -f mol2 -o mol.ac -p gaff2"
@@ -80,7 +77,7 @@ def extract_nonbonded_components(values):
         if output.returncode != 0:
             print(output.stderr)
             raise Exception("Error in antechamber")
-        
+
         # extract the atom types and partial charges
         cmd = "cat  mol.ac | grep UNL | awk '{ print $10 } ' > atomtypes.txt"
         subprocess.run(
@@ -90,23 +87,22 @@ def extract_nonbonded_components(values):
         with open("atomtypes.txt", "r") as f:
             # it captures an extra line at the bottom of the mol2 that we don't need
             atomtypes = [l.strip() for l in f.readlines()]
-       
+
         os.chdir(old_dir)
         atoms.set_array("atomtypes", np.array(atomtypes))
 
-        molecule = Molecule.from_file(os.path.join(tmpdir, "mol.sdf"), allow_undefined_stereo=True)
+        molecule = Molecule.from_file(
+            os.path.join(tmpdir, "mol.sdf"), allow_undefined_stereo=True
+        )
         topology = molecule.to_topology().to_openmm()
         molecule.compute_partial_charges_am1bcc()
-
 
         partials = molecule.partial_charges.value_in_unit(elementary_charge)
         atoms.set_array("partial_charges", np.array(partials))
 
-
         smff = set_smff(smff)
 
         forcefield = initialize_mm_forcefield(molecule=molecule, smff=smff)
-
 
         system = forcefield.createSystem(
             topology=molecule.to_topology().to_openmm(),
@@ -118,7 +114,7 @@ def extract_nonbonded_components(values):
         nonbonded_system = remove_bonded_forces(
             system, atoms=atoms_idx, removeInSet=True, removeConstraints=True
         )
-       
+
         # step an integrator
         temperature = 298.15 * kelvin
         frictionCoeff = 1 / picosecond
@@ -153,7 +149,6 @@ def extract_nonbonded_components(values):
         print(e)
         rmtree(tmpdir)
         return
-
 
 
 def main():

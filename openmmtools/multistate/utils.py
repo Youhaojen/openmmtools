@@ -315,7 +315,7 @@ class NNPCompatibilityMixin(object):
     """
     Mixin for subclasses of `MultistateSampler` that supports `openmm-ml` exchanges of `lambda_interpolate`
     """
-    # TODO - harry: generalise this to handle any lambda parameter that the alchemical system has been configured with so we can do electrostatic/steric decoupling with the opnmmtools framework
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -361,6 +361,22 @@ class NNPCompatibilityMixin(object):
         context_cache = cache.ContextCache(
             capacity=None, time_to_live=None, platform=platform
         )
+        # _parameters = {}
+        # _nbfs = [
+        #     force
+        #     for force in mixed_system.getForces()
+        #     if force.__class__.__name__ == "NonbondedForce"
+        # ]
+        # assert len(_nbfs) == 1, f"there can only be 1 nbf"
+        # num_global_params = _nbfs[0].getNumGlobalParameters()
+        # assert (
+        #     num_global_params == 1
+        # ), f"there can only be 1 global parameter in the nbf, got {num_global_params}"
+        # global_param_name = _nbfs[0].getGlobalParameterName(0)
+        # assert global_param_name == "lambda_interRest"
+        # temp_scale = _nbfs[0].getGlobalParameterDefaultValue(0)
+        # print("tempscale from nbf", temp_scale)
+
         if equilibration_protocol not in ["minimise", "gentle"]:
             raise ValueError(
                 f"equilibration protocol {equilibration_protocol} not recognised"
@@ -466,6 +482,9 @@ class NNPCompatibilityMixin(object):
                 compound_thermostate_copy.set_alchemical_parameters(
                     lambda_val, lambda_protocol
                 )
+                print("lamdba val", lambda_val)
+                print("lambda interpolate", compound_thermostate_copy.lambda_interpolate)
+                # print("lambda interRest", compound_thermostate_copy.lambda_interRest)
                 thermostate_list.append(compound_thermostate_copy)
                 sampler_state_list.append(deepcopy(init_sampler_state))
 
@@ -503,8 +522,52 @@ class NNPCompatibilityMixin(object):
         print(alchemical_state.lambda_electrostatics, alchemical_state.lambda_sterics)
 
         # this reprocudes the lambda schedule from the FreeSolv paper - turn off electrostatics first, then sterics
-        protocol = {'lambda_electrostatics': [1.0, 0.75, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                     'lambda_sterics': [1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0.0]}
+        protocol = {
+            "lambda_electrostatics": [
+                1.0,
+                0.75,
+                0.5,
+                0.25,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ],
+            "lambda_sterics": [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.95,
+                0.9,
+                0.8,
+                0.7,
+                0.6,
+                0.5,
+                0.4,
+                0.35,
+                0.3,
+                0.25,
+                0.2,
+                0.15,
+                0.1,
+                0.05,
+                0.0,
+            ],
+        }
         # simplified lambda scheudle for debugging
         compound_thermostates = states.create_thermodynamic_state_protocol(
             mixed_system,
@@ -512,9 +575,13 @@ class NNPCompatibilityMixin(object):
             composable_states=[alchemical_state],
             constants={"temperature": temperature},
         )
-        sampler_states = [states.SamplerState(positions=init_positions, box_vectors=mixed_system.getDefaultPeriodicBoxVectors()) for _ in compound_thermostates]
-
-
+        sampler_states = [
+            states.SamplerState(
+                positions=init_positions,
+                box_vectors=mixed_system.getDefaultPeriodicBoxVectors(),
+            )
+            for _ in compound_thermostates
+        ]
 
         # once we have the states, run a gentle equilibration protocolm, same as above, then save the states
         init_sampler_state = states.SamplerState(
@@ -538,7 +605,9 @@ class NNPCompatibilityMixin(object):
             init_sampler_state.update_from_context(eq_context)
 
             # equilibrate each state
-            for (thermostate, sampler_state) in zip(compound_thermostates, sampler_states):
+            for (thermostate, sampler_state) in zip(
+                compound_thermostates, sampler_states
+            ):
                 thermostate.apply_to_context(eq_context)
                 logger.info(
                     f"Alchemical parameter {eq_context.getParameter('lambda_sterics')}"
