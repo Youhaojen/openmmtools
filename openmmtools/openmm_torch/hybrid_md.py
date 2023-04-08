@@ -604,7 +604,7 @@ class MixedSystem(MACESystemBase):
             from openff.interchange import Interchange
             interchange = Interchange.from_smirnoff(topology=molecule.to_topology(), force_field=ForceField(self.SM_FF))
             interchange.to_top(os.path.join(self.output_dir, "topol.top"))
-            interchange.to_gro(os.path.join(self.output_dir, "struct.gro"))
+            interchange.to_gro(os.path.join(self.output_dir, "conf.gro"))
         if self.padding > 0:
             if "tip4p" in self.water_model:
                 modeller.addExtraParticles(forcefield)
@@ -617,7 +617,6 @@ class MixedSystem(MACESystemBase):
             )
 
             omm_box_vecs = self.modeller.topology.getPeriodicBoxVectors()
-            self.modeller.topology.setPeriodicBoxVectors()
             # ensure atoms object has boxvectors taken from the PDB file
             atoms.set_cell(
                 [
@@ -626,6 +625,9 @@ class MixedSystem(MACESystemBase):
                     omm_box_vecs[2][2].value_in_unit(angstrom),
                 ]
             )
+        else:
+            # this should be a large enough box 
+            self.modeller.topology.setPeriodicBoxVectors([[5, 0, 0], [0, 5, 0], [0, 0, 5]])
 
         system = forcefield.createSystem(
             self.modeller.topology,
