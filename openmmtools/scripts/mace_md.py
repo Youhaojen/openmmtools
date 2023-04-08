@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--ionicStrength", "-i", default=0.15, type=float)
     parser.add_argument("--potential", default="mace", type=str)
     parser.add_argument("--temperature", type=float, default=298.15)
-    parser.add_argument("--minimise", action="store_true", default=True)
+    parser.add_argument("--no_minimise", action="store_true")
     parser.add_argument("--pressure", type=float, default=None)
     parser.add_argument(
         "--integrator",
@@ -123,6 +123,7 @@ def main():
         default="pure",
     )
     parser.add_argument("--mm_only", action="store_true", default=False)
+    parser.add_argument("--write_gmx", action="store_true", default=False)
     parser.add_argument(
         "--ml_selection",
         help="specify how the ML subset should be interpreted, either as a resname or a chain ",
@@ -157,6 +158,8 @@ def main():
         raise ValueError(
             "Cannot run a pure MACE system with only the MM forcefield - please use a hybrid system"
         )
+    minimise = False if args.no_minimise else True
+    print("Minimise: ", minimise)
 
     # Only need interpolation when running repex and not decoupling
     interpolate = True if (args.run_type == "repex" and not args.decouple) else False
@@ -176,7 +179,7 @@ def main():
             timestep=args.timestep,
             smff=args.smff,
             boxsize=args.box,
-            minimise=args.minimise,
+            minimise=minimise,
         )
 
     elif args.system_type == "hybrid":
@@ -198,10 +201,11 @@ def main():
             pressure=args.pressure,
             decouple=args.decouple,
             interpolate=interpolate,
-            minimise=args.minimise,
+            minimise=minimise,
             mm_only=args.mm_only,
             water_model=args.water_model,
             rest2=args.rest2,
+            write_gmx=args.write_gmx,
         )
     if args.run_type == "md":
         system.run_mixed_md(

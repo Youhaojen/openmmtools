@@ -28,6 +28,7 @@ from openmm.app import (
     CheckpointReporter,
     PDBFile,
     Modeller,
+    NoCutoff,
     PME,
     HBonds
 )
@@ -48,6 +49,7 @@ from openmm.unit import (
     angstrom,
 )
 from openff.toolkit.topology import Molecule
+from openff.toolkit import ForceField
 
 from openmmtools import alchemy
 
@@ -516,6 +518,7 @@ class MixedSystem(MACESystemBase):
         pressure: Optional[float] = None,
         cv1: Optional[str] = None,
         cv2: Optional[str] = None,
+        write_gmx: bool = False,
     ) -> None:
         super().__init__(
             file=file,
@@ -544,6 +547,7 @@ class MixedSystem(MACESystemBase):
         self.water_model = water_model
         self.decouple = decouple
         self.interpolate = interpolate
+        self.write_gmx = write_gmx
 
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -596,29 +600,36 @@ class MixedSystem(MACESystemBase):
         forcefield = initialize_mm_forcefield(
             molecule=molecule, forcefields=self.forcefields, smff=self.SM_FF
         )
-        if "tip4p" in self.water_model:
-            modeller.addExtraParticles(forcefield)
-        self.modeller.addSolvent(
-            forcefield,
-            model=self.water_model,
-            padding=self.padding * nanometers,
-            ionicStrength=self.ionicStrength * molar,
-            neutralize=True,
-        )
+        if self.write_gmx:
+            from openff.interchange import Interchange
+            interchange = Interchange.from_smirnoff(topology=molecule.to_topology(), force_field=ForceField(self.SM_FF))
+            interchange.to_top(os.path.join(self.output_dir, "topol.top"))
+            interchange.to_gro(os.path.join(self.output_dir, "struct.gro"))
+        if self.padding > 0:
+            if "tip4p" in self.water_model:
+                modeller.addExtraParticles(forcefield)
+            self.modeller.addSolvent(
+                forcefield,
+                model=self.water_model,
+                padding=self.padding * nanometers,
+                ionicStrength=self.ionicStrength * molar,
+                neutralize=True,
+            )
 
-        omm_box_vecs = self.modeller.topology.getPeriodicBoxVectors()
-        # ensure atoms object has boxvectors taken from the PDB file
-        atoms.set_cell(
-            [
-                omm_box_vecs[0][0].value_in_unit(angstrom),
-                omm_box_vecs[1][1].value_in_unit(angstrom),
-                omm_box_vecs[2][2].value_in_unit(angstrom),
-            ]
-        )
+            omm_box_vecs = self.modeller.topology.getPeriodicBoxVectors()
+            self.modeller.topology.setPeriodicBoxVectors()
+            # ensure atoms object has boxvectors taken from the PDB file
+            atoms.set_cell(
+                [
+                    omm_box_vecs[0][0].value_in_unit(angstrom),
+                    omm_box_vecs[1][1].value_in_unit(angstrom),
+                    omm_box_vecs[2][2].value_in_unit(angstrom),
+                ]
+            )
 
         system = forcefield.createSystem(
             self.modeller.topology,
-            nonbondedMethod=PME,
+            nonbondedMethod=PME if self.modeller.topology.getPeriodicBoxVectors() is not None else NoCutoff,
             nonbondedCutoff=self.nonbondedCutoff * nanometer,
             constraints=None if "unconstrained" in self.SM_FF else HBonds,
         )
@@ -630,11 +641,21 @@ class MixedSystem(MACESystemBase):
                 MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
             )
 
+
         # write the final prepared system to disk
         with open(os.path.join(self.output_dir, "prepared_system.pdb"), "w") as f:
             PDBFile.writeFile(
                 self.modeller.topology, self.modeller.getPositions(), file=f
             )
+
+        # if self.write_gmx:
+        #     # write the openmm system to gromacs top/gro with parmed
+        #     from parmed.openmm import load_topology
+
+        #     parmed_structure = load_topology(self.modeller.topology, system)
+        #     parmed_structure.save(os.path.join(self.output_dir, "topol_full.top"), overwrite=True)
+        #     parmed_structure.save(os.path.join(self.output_dir, "conf_full.gro"), overwrite=True)
+        #     raise KeyboardInterrupt
 
         if not self.decouple:
             if self.mm_only:
