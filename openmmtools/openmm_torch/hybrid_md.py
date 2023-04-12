@@ -15,7 +15,6 @@ from openmm import (
     CustomTorsionForce,
     NoseHooverIntegrator,
 )
-from openmmtools.integrators import LangevinIntegrator as OpenMMToolsLangevinIntegrator
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
 from mdtraj.reporters import HDF5Reporter, NetCDFReporter
@@ -66,6 +65,7 @@ from openmmtools.openmm_torch.repex import (
 from openmmtools.openmm_torch.utils import (
     initialize_mm_forcefield,
     set_smff,
+    ForceReporter
 )
 from tempfile import mkstemp
 import os
@@ -265,13 +265,22 @@ class MACESystemBase(ABC):
             totalSteps=steps,
         )
         simulation.reporters.append(reporter)
+        # keep periodic box off to make quick visualisation easier
         simulation.reporters.append(
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=True,
+                enforcePeriodicBox=False,
             )
         )
+        # add force reporter
+        simulation.reporters.append(
+            ForceReporter(
+                file=os.path.join(self.output_dir, "forces.txt"),
+                reportInterval=interval,
+            )
+        )
+        # we need this to hold the box vectors for NPT simulations
         netcdf_reporter = NetCDFReporter(
             file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
             reportInterval=interval,
