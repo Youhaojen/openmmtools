@@ -18,7 +18,7 @@ from openmm import (
 from openmmtools.integrators import LangevinIntegrator as OpenMMToolsLangevinIntegrator
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
-from mdtraj.reporters import HDF5Reporter
+from mdtraj.reporters import HDF5Reporter, NetCDFReporter
 from mdtraj.geometry.dihedral import indices_phi, indices_psi
 from openmm.app import (
     Simulation,
@@ -28,7 +28,7 @@ from openmm.app import (
     CheckpointReporter,
     PDBFile,
     Modeller,
-    NoCutoff,
+    CutoffNonPeriodic,
     PME,
     HBonds
 )
@@ -237,7 +237,7 @@ class MACESystemBase(ABC):
             simulation.context.setPositions(self.modeller.getPositions())
             if self.minimise:
                 logging.info("Minimising energy...")
-                simulation.minimizeEnergy()
+                simulation.minimizeEnergy(maxIterations=10)
                 minimised_state = simulation.context.getState(
                     getPositions=True, getVelocities=True, getForces=True
                 )
@@ -269,9 +269,14 @@ class MACESystemBase(ABC):
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=False,
+                enforcePeriodicBox=True,
             )
         )
+        netcdf_reporter = NetCDFReporter(
+            file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
+            reportInterval=interval,
+        )
+        simulation.reporters.append(netcdf_reporter)
         dcd_reporter = DCDReporter(
             file=os.path.join(self.output_dir, "output.dcd"), reportInterval=interval
         )
@@ -625,13 +630,14 @@ class MixedSystem(MACESystemBase):
                     omm_box_vecs[2][2].value_in_unit(angstrom),
                 ]
             )
-        else:
+        # else:
             # this should be a large enough box 
-            self.modeller.topology.setPeriodicBoxVectors([[5, 0, 0], [0, 5, 0], [0, 0, 5]])
+            # run a non-periodic simulation
+            # self.modeller.topology.setPeriodicBoxVectors([[5, 0, 0], [0, 5, 0], [0, 0, 5]])
 
         system = forcefield.createSystem(
             self.modeller.topology,
-            nonbondedMethod=PME if self.modeller.topology.getPeriodicBoxVectors() is not None else NoCutoff,
+            nonbondedMethod=PME if self.modeller.topology.getPeriodicBoxVectors() is not None else CutoffNonPeriodic,
             nonbondedCutoff=self.nonbondedCutoff * nanometer,
             constraints=None if "unconstrained" in self.SM_FF else HBonds,
         )
