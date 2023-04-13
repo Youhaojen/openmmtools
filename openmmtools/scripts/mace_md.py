@@ -35,7 +35,7 @@ def main():
         "--integrator",
         type=str,
         default="langevin",
-        choices=["langevin", "nose-hoover"],
+        choices=["langevin", "nose-hoover", "rpmd"],
     )
     parser.add_argument(
         "--timestep",

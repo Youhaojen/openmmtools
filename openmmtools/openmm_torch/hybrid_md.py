@@ -11,6 +11,7 @@ from openmm.openmm import System
 from typing import List, Tuple, Optional
 from openmm import (
     LangevinMiddleIntegrator,
+    RPMDIntegrator,
     MonteCarloBarostat,
     CustomTorsionForce,
     NoseHooverIntegrator,
@@ -205,6 +206,11 @@ class MACESystemBase(ABC):
             integrator = NoseHooverIntegrator(
                 self.temperature, self.friction_coeff, self.timestep
             )
+        elif integrator_name == "rpmd":
+            # note this requires a few changes to how we set positions
+            integrator = RPMDIntegrator(
+                5, self.temperature, self.friction_coeff, self.timestep
+            )
         else:
             raise ValueError(
                 f"Unrecognized integrator name {integrator_name}, must be one of ['langevin', 'nose-hoover']"
@@ -233,16 +239,26 @@ class MACESystemBase(ABC):
                 logger.info("Loading simulation from checkpoint file...")
                 simulation.context.loadCheckpoint(f.read())
         else:
-
-            simulation.context.setPositions(self.modeller.getPositions())
+            if isinstance(integrator, RPMDIntegrator):
+                for copy in range(integrator.getNumCopies()):
+                    integrator.setPositions(
+                        copy, self.modeller.getPositions()
+                    )
+            else:
+                simulation.context.setPositions(self.modeller.getPositions())
+                # rpmd requires that the integrator be used to set positions
             if self.minimise:
                 logging.info("Minimising energy...")
                 simulation.minimizeEnergy(maxIterations=10)
-                minimised_state = simulation.context.getState(
-                    getPositions=True, getVelocities=True, getForces=True
-                )
+                if isinstance(integrator, RPMDIntegrator):
+                    minimised_state = integrator.getState(0, getPositions=True, getVelocities=True, getForces=True)
+                else:
+                    minimised_state = simulation.context.getState(
+                        getPositions=True, getVelocities=True, getForces=True
+                    )
+
                 with open(
-                    os.path.join(self.output_dir, f"minimised_system.pdb"), "w"
+                    os.pathjoin(self.output_dir, f"minimised_system.pdb"), "w"
                 ) as f:
                     PDBFile.writeFile(
                         self.modeller.topology, minimised_state.getPositions(), file=f
