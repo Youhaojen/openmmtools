@@ -316,7 +316,6 @@ class NNPCompatibilityMixin(object):
     Mixin for subclasses of `MultistateSampler` that supports `openmm-ml` exchanges of `lambda_interpolate`
     """
 
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -483,7 +482,9 @@ class NNPCompatibilityMixin(object):
                     lambda_val, lambda_protocol
                 )
                 print("lamdba val", lambda_val)
-                print("lambda interpolate", compound_thermostate_copy.lambda_interpolate)
+                print(
+                    "lambda interpolate", compound_thermostate_copy.lambda_interpolate
+                )
                 # print("lambda interRest", compound_thermostate_copy.lambda_interRest)
                 thermostate_list.append(compound_thermostate_copy)
                 sampler_state_list.append(deepcopy(init_sampler_state))

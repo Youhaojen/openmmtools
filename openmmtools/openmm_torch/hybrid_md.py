@@ -4,7 +4,6 @@ from ase.io import read
 import torch
 import time
 import numpy as np
-import sys
 from ase import Atoms
 from rdkit.Chem.rdmolfiles import MolFromPDBFile, MolFromXYZFile
 from openmm.openmm import System
@@ -16,6 +15,7 @@ from openmm import (
     CustomTorsionForce,
     NoseHooverIntegrator,
 )
+import re
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
 from mdtraj.reporters import HDF5Reporter, NetCDFReporter
@@ -30,7 +30,7 @@ from openmm.app import (
     Modeller,
     CutoffNonPeriodic,
     PME,
-    HBonds
+    HBonds,
 )
 from openmm.app.metadynamics import Metadynamics, BiasVariable
 from openmm.app.topology import Topology
@@ -38,12 +38,12 @@ from openmm.app.element import Element
 from openmm.unit import (
     kelvin,
     picosecond,
+    kilocalorie_per_mole,
     femtosecond,
     kilojoule_per_mole,
     picoseconds,
     femtoseconds,
     bar,
-    nanometer,
     nanometers,
     molar,
     angstrom,
@@ -52,7 +52,7 @@ from openff.toolkit.topology import Molecule
 from openff.toolkit import ForceField
 
 from openmmtools import alchemy
-
+from atmmetaforce import *
 
 from openmmml.models.macepotential import MACEPotentialImplFactory
 from openmmml.models.anipotential import ANIPotentialImplFactory
@@ -66,7 +66,7 @@ from openmmtools.openmm_torch.repex import (
 from openmmtools.openmm_torch.utils import (
     initialize_mm_forcefield,
     set_smff,
-    ForceReporter
+    ForceReporter,
 )
 from tempfile import mkstemp
 import os
@@ -234,16 +234,14 @@ class MACESystemBase(ABC):
             platformProperties={"Precision": self.openmm_precision},
         )
         checkpoint_filepath = os.path.join(self.output_dir, output_file[:-4] + ".chk")
-        if restart:
+        if restart and os.path.isfile(checkpoint_filepath):
             with open(checkpoint_filepath, "rb") as f:
                 logger.info("Loading simulation from checkpoint file...")
                 simulation.context.loadCheckpoint(f.read())
         else:
             if isinstance(integrator, RPMDIntegrator):
                 for copy in range(integrator.getNumCopies()):
-                    integrator.setPositions(
-                        copy, self.modeller.getPositions()
-                    )
+                    integrator.setPositions(copy, self.modeller.getPositions())
             else:
                 simulation.context.setPositions(self.modeller.getPositions())
                 # rpmd requires that the integrator be used to set positions
@@ -251,14 +249,16 @@ class MACESystemBase(ABC):
                 logging.info("Minimising energy...")
                 simulation.minimizeEnergy(maxIterations=10)
                 if isinstance(integrator, RPMDIntegrator):
-                    minimised_state = integrator.getState(0, getPositions=True, getVelocities=True, getForces=True)
+                    minimised_state = integrator.getState(
+                        0, getPositions=True, getVelocities=True, getForces=True
+                    )
                 else:
                     minimised_state = simulation.context.getState(
                         getPositions=True, getVelocities=True, getForces=True
                     )
 
                 with open(
-                    os.pathjoin(self.output_dir, f"minimised_system.pdb"), "w"
+                    os.path.join(self.output_dir, "minimised_system.pdb"), "w"
                 ) as f:
                     PDBFile.writeFile(
                         self.modeller.topology, minimised_state.getPositions(), file=f
@@ -350,7 +350,7 @@ class MACESystemBase(ABC):
         intervals_per_lambda_window: int = 10,
         steps_per_equilibration_interval: int = 1000,
         equilibration_protocol: str = "minimise",
-        checkpoint_interval: int = 10
+        checkpoint_interval: int = 10,
     ) -> None:
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
         # even if restart has been set, disable if the checkpoint file was not found, enforce minimising the system
@@ -370,7 +370,7 @@ class MACESystemBase(ABC):
                 "timestep": 1.0 * femtoseconds,
                 "collision_rate": 10.0 / picoseconds,
                 "n_steps": 1000,
-                "reassign_velocities":False,
+                "reassign_velocities": False,
                 "n_restart_attempts": 20,
             },
             replica_exchange_sampler_kwargs={
@@ -456,6 +456,238 @@ class MACESystemBase(ABC):
         alchemical_system = factory.create_alchemical_system(system, alchemical_region)
 
         return alchemical_system
+
+    def run_atm(self, steps: int, interval: int) -> None:
+
+        lmbd = 0.5
+        lambda1 = lmbd
+        lambda2 = lmbd
+        alpha = 0.0 / kilocalorie_per_mole
+        u0 = 0.0 * kilocalorie_per_mole
+        w0coeff = 0.0 * kilocalorie_per_mole
+        umsc = 100.0 * kilocalorie_per_mole
+        ubcore = 50.0 * kilocalorie_per_mole
+        acore = 0.062500
+        direction = 1.0
+
+        rcpt_resid = 1
+        lig1_resid = 2
+        lig2_resid = 3
+        displ = [22.0, 22.0, 22.0]
+
+        [displ[i] for i in range(3)] * angstrom
+        lig1_restr_offset = [0.0 for i in range(3)] * angstrom
+        lig2_restr_offset = [displ[i] for i in range(3)] * angstrom
+        # TODO: how to select ligand ref atoms
+        refatoms_lig1 = [8, 6, 4]
+        refatoms_lig2 = [3, 5, 1]
+
+        atm_utils = ATMMetaForceUtils(self.system)
+
+        self.modeller.topology.getNumAtoms()
+
+        rcpt_atoms = []
+        for at in self.modeller.topology.atoms():
+            if int(at.residue.id) == rcpt_resid:
+                rcpt_atoms.append(at.index)
+
+        lig1_atoms = []
+        for at in self.modeller.topology.atoms():
+            if int(at.residue.id) == lig1_resid:
+                lig1_atoms.append(at.index)
+
+        lig2_atoms = []
+        for at in self.modeller.topology.atoms():
+            if int(at.residue.id) == lig2_resid:
+                lig2_atoms.append(at.index)
+
+        rcpt_atom_restr = rcpt_atoms
+        lig1_atom_restr = lig1_atoms
+        lig2_atom_restr = lig2_atoms
+
+        kf = (
+            25.0 * kilocalorie_per_mole / angstrom**2
+        )  # force constant for Vsite CM-CM restraint
+        r0 = 5 * angstrom  # radius of Vsite sphere
+
+        # these can be 'None" if not using orientational restraints
+
+        # Vsite restraint for lig1
+        atm_utils.addVsiteRestraintForceCMCM(
+            lig_cm_particles=lig1_atom_restr,
+            rcpt_cm_particles=rcpt_atom_restr,
+            kfcm=kf,
+            tolcm=r0,
+            offset=lig1_restr_offset,
+        )
+
+        # Vsite restraint for lig2 (offset into the bulk position)
+        atm_utils.addVsiteRestraintForceCMCM(
+            lig_cm_particles=lig2_atom_restr,
+            rcpt_cm_particles=rcpt_atom_restr,
+            kfcm=kf,
+            tolcm=r0,
+            offset=lig2_restr_offset,
+        )
+
+        # alignment restraints between lig1 and lig2
+        lig1_ref_atoms = [refatoms_lig1[i] + lig1_atoms[0] for i in range(3)]
+        lig2_ref_atoms = [refatoms_lig2[i] + lig2_atoms[0] for i in range(3)]
+        atm_utils.addAlignmentForce(
+            liga_ref_particles=lig1_ref_atoms,
+            ligb_ref_particles=lig2_ref_atoms,
+            kfdispl=2.5 * kilocalorie_per_mole / angstrom**2,
+            ktheta=10.0 * kilocalorie_per_mole,
+            kpsi=10.0 * kilocalorie_per_mole,
+            offset=lig2_restr_offset,
+        )
+
+        # receptor positional restraints, C-atoms of lower cup of the TEMOA host
+        fc = 25.0 * kilocalorie_per_mole / angstrom**2
+        tol = 0.5 * angstrom
+        carbon = re.compile("^C.*")
+        posrestr_atoms = []
+        for at in self.modeller.topology.atoms():
+            if (
+                int(at.residue.id) == rcpt_resid
+                and carbon.match(at.name)
+                and at.index < 40
+            ):
+                posrestr_atoms.append(at.index)
+        atm_utils.addPosRestraints(posrestr_atoms, self.modeller.positions, fc, tol)
+
+        # create ATM Force
+        atmforcegroup = 2
+        nonbonded_force_group = 1
+        atm_utils.setNonbondedForceGroup(nonbonded_force_group)
+        atmvariableforcegroups = [nonbonded_force_group]
+        atmforce = ATMMetaForce(
+            lambda1,
+            lambda2,
+            alpha * kilojoules_per_mole,
+            u0 / kilojoules_per_mole,
+            w0coeff / kilojoules_per_mole,
+            umsc / kilojoules_per_mole,
+            ubcore / kilojoules_per_mole,
+            acore,
+            direction,
+            atmvariableforcegroups,
+        )
+        for at in self.modeller.topology.atoms():
+            atmforce.addParticle(at.index, 0.0, 0.0, 0.0)
+        for i in lig1_atoms:
+            atmforce.setParticleParameters(
+                i, i, displ[0] * angstrom, displ[1] * angstrom, displ[2] * angstrom
+            )
+        for i in lig2_atoms:
+            atmforce.setParticleParameters(
+                i, i, -displ[0] * angstrom, -displ[1] * angstrom, -displ[2] * angstrom
+            )
+        atmforce.setForceGroup(atmforcegroup)
+        self.system.addForce(atmforce)
+        print("Using ATM Meta Force plugin version = %s" % ATMMETAFORCE_VERSION)
+
+        # setup integrator
+        temperature = 300 * kelvin
+        frictionCoeff = 0.5 / picosecond
+        MDstepsize = 0.001 * picosecond
+
+        # add barostat but turned off, needed to load checkopoint file written with NPT
+        barostat = MonteCarloBarostat(1 * bar, temperature)
+        barostat.setFrequency(0)  # disabled
+        self.system.addForce(barostat)
+
+        integrator = LangevinMiddleIntegrator(
+            temperature / kelvin,
+            frictionCoeff / (1 / picosecond),
+            MDstepsize / picosecond,
+        )
+        integrator.setIntegrationForceGroups({0, atmforcegroup})
+
+        # platform_name = 'OpenCL'
+        # platform_name = 'Reference'
+        # platform_name = 'CUDA'
+        # platform = Platform.getPlatformByName("CUDA")
+
+        # properties = {}
+        # properties["Precision"] = "mixed"
+
+        simulation = Simulation(self.modeller.topology, self.system, integrator)
+        print("Using platform %s" % simulation.context.getPlatform().getName())
+        simulation.context.setPositions(self.modeller.positions)
+
+        # one preliminary energy evaluation seems to be required to init the energy routines
+        state = simulation.context.getState(getEnergy=True, groups={0, atmforcegroup})
+        state.getPotentialEnergy()
+
+        # we should do this
+
+        # override ATM parameters from checkpoint file
+        simulation.context.setParameter(atmforce.Lambda1(), lambda1)
+        simulation.context.setParameter(atmforce.Lambda2(), lambda2)
+        simulation.context.setParameter(atmforce.Alpha(), alpha * kilojoules_per_mole)
+        simulation.context.setParameter(atmforce.U0(), u0 / kilojoules_per_mole)
+        simulation.context.setParameter(atmforce.W0(), w0coeff / kilojoules_per_mole)
+        simulation.context.setParameter(atmforce.Umax(), umsc / kilojoules_per_mole)
+        simulation.context.setParameter(atmforce.Ubcore(), ubcore / kilojoules_per_mole)
+        simulation.context.setParameter(atmforce.Acore(), acore)
+        simulation.context.setParameter(atmforce.Direction(), direction)
+
+        state = simulation.context.getState(getEnergy=True, groups={0, atmforcegroup})
+        print("Potential Energy = ", state.getPotentialEnergy())
+
+        print("Leg1 production at lambda = %f ..." % lmbd)
+
+        stepId = 5000
+        totalSteps = 50000
+        loopStep = int(totalSteps / stepId)
+        simulation.reporters.append(
+            StateDataReporter(
+                sys.stdout, stepId, step=True, potentialEnergy=True, temperature=True
+            )
+        )
+        simulation.reporters.append(
+            DCDReporter(os.path.join(self.output_dir, "output" + ".dcd"), stepId)
+        )
+
+        binding_file = "energies" + ".out"
+        f = open(os.path.join(self.output_dir, binding_file), "w")
+
+        for i in range(loopStep):
+            simulation.step(stepId)
+            state = simulation.context.getState(
+                getEnergy=True, groups={0, atmforcegroup}
+            )
+            pot_energy = (state.getPotentialEnergy()).value_in_unit(
+                kilocalorie_per_mole
+            )
+            pert_energy = (
+                atmforce.getPerturbationEnergy(simulation.context)
+            ).value_in_unit(kilocalorie_per_mole)
+            l1 = simulation.context.getParameter(atmforce.Lambda1())
+            l2 = simulation.context.getParameter(atmforce.Lambda2())
+            a = simulation.context.getParameter(atmforce.Alpha()) / kilojoules_per_mole
+            umid = simulation.context.getParameter(atmforce.U0()) * kilojoules_per_mole
+            w0 = simulation.context.getParameter(atmforce.W0()) * kilojoules_per_mole
+            print(
+                "%f %f %f %f %f %f %f %f %f"
+                % (
+                    temperature / kelvin,
+                    lmbd,
+                    l1,
+                    l2,
+                    a * kilocalorie_per_mole,
+                    umid / kilocalorie_per_mole,
+                    w0 / kilocalorie_per_mole,
+                    pot_energy,
+                    pert_energy,
+                ),
+                file=f,
+            )
+            f.flush()
+
+        print("SaveState ...")
+        simulation.saveState("final_state" + "-out.xml")
 
     def run_neq_switching(self, steps: int, interval: int) -> float:
         """Compute the protocol work performed by switching from the MM description to the MM/ML through lambda_interpolate
@@ -563,7 +795,7 @@ class MixedSystem(MACESystemBase):
             smff=smff,
             minimise=minimise,
             mm_only=mm_only,
-            rest2=rest2
+            rest2=rest2,
         )
 
         self.forcefields = forcefields
@@ -602,7 +834,10 @@ class MixedSystem(MACESystemBase):
         :param str model_path: path to the mace model
         :return Tuple[System, Modeller]: return mixed system and the modeller for topology + position access by downstream methods
         """
-        atoms, molecule = self.initialize_ase_atoms(ml_mol)
+        if ml_mol is not None:
+            atoms, molecule = self.initialize_ase_atoms(ml_mol)
+        else:
+            atoms, molecule = None, None
         # set the default topology to that of the ml molecule, this will get overwritten below
         # topology = molecule.to_topology().to_openmm()
 
@@ -617,22 +852,50 @@ class MixedSystem(MACESystemBase):
             )
 
         # Handle a small molecule/small periodic system, passed as an sdf or xyz
+        # this should also handle generating smirnoff parameters for something like an octa-acid, where this is still to be handled by the MM forcefield, but needs parameters generated
         elif file.endswith(".sdf") or file.endswith(".xyz"):
-            input_file = molecule
-            topology = molecule.to_topology().to_openmm()
-            # Hold positions in nanometers
-            positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
 
-            logger.info(f"Initialized topology with {positions.shape} positions")
+            # handle the case where the receptor and ligand are both passed as different sdf files:
+            if ml_mol != file:
+                logger.info("Combining and parametrising 2 sdf files...")
+                # load the receptor
+                receptor_as_molecule = Molecule.from_file(file)
 
-            self.modeller = Modeller(topology, positions)
+                # create modeller from this
+                self.modeller = Modeller(
+                    receptor_as_molecule.to_topology().to_openmm(),
+                    get_xyz_from_mol(receptor_as_molecule.to_rdkit()) / 10,
+                )
+                # combine with modeller for the ml_mol
+                ml_mol_modeller = Modeller(
+                    molecule.to_topology().to_openmm(),
+                    get_xyz_from_mol(molecule.to_rdkit()) / 10,
+                )
+
+                self.modeller.add(ml_mol_modeller.topology, ml_mol_modeller.positions)
+                # send both to the forcefield initializer
+                molecule = [molecule, receptor_as_molecule]
+
+            else:
+
+                input_file = molecule
+                topology = molecule.to_topology().to_openmm()
+                # Hold positions in nanometers
+                positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
+
+                logger.info(f"Initialized topology with {positions.shape} positions")
+
+                self.modeller = Modeller(topology, positions)
 
         forcefield = initialize_mm_forcefield(
             molecule=molecule, forcefields=self.forcefields, smff=self.SM_FF
         )
         if self.write_gmx:
             from openff.interchange import Interchange
-            interchange = Interchange.from_smirnoff(topology=molecule.to_topology(), force_field=ForceField(self.SM_FF))
+
+            interchange = Interchange.from_smirnoff(
+                topology=molecule.to_topology(), force_field=ForceField(self.SM_FF)
+            )
             interchange.to_top(os.path.join(self.output_dir, "topol.top"))
             interchange.to_gro(os.path.join(self.output_dir, "conf.gro"))
         if self.padding > 0:
@@ -648,21 +911,24 @@ class MixedSystem(MACESystemBase):
 
             omm_box_vecs = self.modeller.topology.getPeriodicBoxVectors()
             # ensure atoms object has boxvectors taken from the PDB file
-            atoms.set_cell(
-                [
-                    omm_box_vecs[0][0].value_in_unit(angstrom),
-                    omm_box_vecs[1][1].value_in_unit(angstrom),
-                    omm_box_vecs[2][2].value_in_unit(angstrom),
-                ]
-            )
+            if atoms is not None:
+                atoms.set_cell(
+                    [
+                        omm_box_vecs[0][0].value_in_unit(angstrom),
+                        omm_box_vecs[1][1].value_in_unit(angstrom),
+                        omm_box_vecs[2][2].value_in_unit(angstrom),
+                    ]
+                )
         # else:
-            # this should be a large enough box 
-            # run a non-periodic simulation
-            # self.modeller.topology.setPeriodicBoxVectors([[5, 0, 0], [0, 5, 0], [0, 0, 5]])
+        # this should be a large enough box
+        # run a non-periodic simulation
+        # self.modeller.topology.setPeriodicBoxVectors([[5, 0, 0], [0, 5, 0], [0, 0, 5]])
 
         system = forcefield.createSystem(
             self.modeller.topology,
-            nonbondedMethod=PME if self.modeller.topology.getPeriodicBoxVectors() is not None else CutoffNonPeriodic,
+            nonbondedMethod=PME
+            if self.modeller.topology.getPeriodicBoxVectors() is not None
+            else CutoffNonPeriodic,
             nonbondedCutoff=self.nonbondedCutoff * nanometer,
             constraints=None if "unconstrained" in self.SM_FF else HBonds,
         )
@@ -673,7 +939,6 @@ class MixedSystem(MACESystemBase):
             system.addForce(
                 MonteCarloBarostat(pressure * bar, self.temperature * kelvin)
             )
-
 
         # write the final prepared system to disk
         with open(os.path.join(self.output_dir, "prepared_system.pdb"), "w") as f:
@@ -708,7 +973,7 @@ class MixedSystem(MACESystemBase):
                     filename=model_path,
                     dtype=self.dtype,
                     T_high=450 * kelvin if self.rest2 else 300 * kelvin,
-                    T_low=300 * kelvin
+                    T_low=300 * kelvin,
                 ).mixed_system
 
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges

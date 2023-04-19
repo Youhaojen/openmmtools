@@ -21,7 +21,6 @@ import abc
 import yaml
 import warnings
 import importlib
-import collections
 from collections.abc import Iterable
 import numpy as np
 import netCDF4 as nc
@@ -86,7 +85,7 @@ def normalize_path(path):
     """
     split_path = decompose_path(path)
     return "/".join(
-        [path_part.strip("/ ") for path_part in split_path if path_part is not ""]
+        [path_part.strip("/ ") for path_part in split_path if path_part != ""]
     )
 
 
@@ -726,7 +725,7 @@ class NCVariableCodec(Codec):
         self._attempt_storage_read()
         # Handle variable size objects
         # This line will not happen unless target is real, so output_mode will return the correct value
-        if self._output_mode is "a":
+        if self._output_mode == "a":
             self._save_shape = self._bound_target.shape[1:]
         else:
             self._save_shape = self._bound_target.shape

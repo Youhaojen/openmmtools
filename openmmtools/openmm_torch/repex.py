@@ -4,21 +4,12 @@ import os
 from openmmml.mlpotential import MLPotential
 import openmm
 from openmm import unit, app
-from openmm.app import Topology, Modeller
-import time
+from openmm.app import Topology
 import mdtraj
-import numpy as np
-from copy import deepcopy
-from openmmtools import cache
 from openmmtools import mcmc
-from openmmtools.mcmc import LangevinSplittingDynamicsMove
 from openmmtools.multistate import replicaexchange, multistatesampler
 from openmmtools.multistate.utils import NNPCompatibilityMixin
-from openmmtools.multistate.replicaexchange import ReplicaExchangeSampler
-from openmmtools.alchemy import NNPAlchemicalState
-from typing import Dict, Any, Iterable, Union, Optional, List
-from openmmtools.states import ThermodynamicState, CompoundThermodynamicState
-from openmmtools import alchemy, states
+from typing import Dict, Iterable, Optional, List
 import os
 import logging
 
@@ -49,6 +40,7 @@ def get_atoms_from_resname(
         atoms = topology.select(f"chainid == {nnpify_id}")
         return atoms
     elif nnpify_type == "resname":
+        print([r.name for r in topology.residues()])
         all_resnames = [
             res.name for res in topology.residues() if res.name == nnpify_id
         ]
@@ -87,6 +79,7 @@ def assert_no_residue_constraints(system: openmm.System, atoms: Iterable[int]):
 
 
 class MixedSystemConstructor:
+
     """simple handler to make vanilla `openmm.System` objects a mixedSystem with an `openmm.TorchForce`"""
 
     def __init__(
@@ -197,7 +190,7 @@ class RepexConstructor:
             _sampler.energy_context_cache = context_cache
             _sampler.sampler_context_cache = context_cache
         else:
-            logging.info(f"Starting Repex sampling from scratch")
+            logging.info("Starting Repex sampling from scratch")
             _sampler = NNPRepexSampler(
                 mcmc_moves=mcmc_moves, **self._replica_exchange_sampler_kwargs
             )

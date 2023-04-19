@@ -1,27 +1,67 @@
-import os
-import mpiplus
 from argparse import ArgumentParser
 from openmmtools.openmm_torch.hybrid_md import PureSystem, MixedSystem
 from mace import tools
 import logging
 import torch
+import os
+from prettytable import PrettyTable
+
+logging.getLogger("openmmtools.multistate").setLevel(logging.ERROR)
 
 
-logging.getLogger('openmmtools.multistate').setLevel(logging.ERROR)
+class ConsoleColours:
+    HEADER = "\033[95m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    RED = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    ORANGE = "\033[0;33m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    BLINKING = "\33[5m"
+
+
 
 
 def main():
+    banner = f"""{ConsoleColours.CYAN}
+
+
+
+====================================================================================================
+ooo        ooooo       .o.         .oooooo.   oooooooooooo         ooo        ooooo oooooooooo.   
+`88.       .888'      .888.       d8P'  `Y8b  `888'     `8         `88.       .888' `888'   `Y8b  
+ 888b     d'888      .8"888.     888           888                  888b     d'888   888      888 
+ 8 Y88. .P  888     .8' `888.    888           888oooo8             8 Y88. .P  888   888      888 
+ 8  `888'   888    .88ooo8888.   888           888    "    8888888  8  `888'   888   888      888 
+ 8    Y     888   .8'     `888.  `88b    ooo   888       o          8    Y     888   888     d88' 
+o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o888o o888bood8P'   
+====================================================================================================
+{ConsoleColours.ENDC}                                                                                                  
+                                                                                                  
+                                                                                                  
+"""
+    try:
+        width = os.get_terminal_size().columns
+    except (OSError, AttributeError):
+        width = 150
+    for line in banner.split("\n"):
+        print(line.center(width))
+
     parser = ArgumentParser()
 
     parser.add_argument("--file", "-f", type=str)
     parser.add_argument(
         "--ml_mol",
         type=str,
-        help="either smiles string or file path for the small molecule to be described by MACE",
+        help="either smiles string or file path for the \
+            small molecule to be described by MACE",
         default=None,
     )
     parser.add_argument(
-        "--run_type", choices=["md", "repex", "neq"], type=str, default="md"
+        "--run_type", choices=["md", "repex", "neq", "atm"], type=str, default="md"
     )
     parser.add_argument("--steps", "-s", type=int, default=10000)
     parser.add_argument("--padding", "-p", default=1.2, type=float)
@@ -46,7 +86,8 @@ def main():
     parser.add_argument(
         "--extract_nb",
         action="store_true",
-        help="If true, extracts non-bonded components of the SM forcefield, adds them to a separate array on the atoms object, writes back out",
+        help="If true, extracts non-bonded components of the SM forcefield, adds them \
+            to a separate array on the atoms object, writes back out",
     )
     parser.add_argument("--replicas", type=int, default=10)
     parser.add_argument(
@@ -75,7 +116,8 @@ def main():
     parser.add_argument("--restart", action="store_true")
     parser.add_argument(
         "--decouple",
-        help="tell the repex constructor to deal with decoupling sterics + electrostatics, instead of lambda_interpolate",
+        help="tell the repex constructor to deal with decoupling sterics + \
+            electrostatics, instead of lambda_interpolate",
         default=False,
         action="store_true",
     )
@@ -126,21 +168,30 @@ def main():
     parser.add_argument("--write_gmx", action="store_true", default=False)
     parser.add_argument(
         "--ml_selection",
-        help="specify how the ML subset should be interpreted, either as a resname or a chain ",
+        help="specify how the ML subset should be interpreted, \
+            either as a resname or a chain ",
         choices=["resname", "chain"],
         default="resname",
     )
     args = parser.parse_args()
+    x = PrettyTable()
+    x.field_names = ["Argument", "Value"]
+    for arg in vars(args):
+        x.add_row([arg, getattr(args, arg)])
+    print(x)
 
     if args.dtype == "float32":
         logging.warning(
-            "Running with single precision - this can lead to numerical stability issues"
+            "Running with single precision \
+                - this can lead to numerical stability issues"
         )
         torch.set_default_dtype(torch.float32)
         dtype = torch.float32
     elif args.dtype == "float64":
         torch.set_default_dtype(torch.float64)
         dtype = torch.float64
+    else:
+        raise ValueError(f"Data type {args.dtype} not recognised")
     tools.setup_logger(level=args.log_level, directory=args.log_dir)
 
     # we don't need to specify the file twice if dealing with just the ligand
@@ -156,7 +207,8 @@ def main():
 
     if args.mm_only and args.system_type == "pure":
         raise ValueError(
-            "Cannot run a pure MACE system with only the MM forcefield - please use a hybrid system"
+            "Cannot run a pure MACE system with only the MM forcefield\
+                 - please use a hybrid system"
         )
     minimise = False if args.no_minimise else True
     print("Minimise: ", minimise)
@@ -166,7 +218,9 @@ def main():
     print("Interpolate: ", interpolate)
 
     if args.system_type == "pure":
-        # if we're running a pure system, we need to specify the ml_mol, args.file is only useful for metadynamics where we need the topology to extract the right CV atoms
+        # if we're running a pure system, we need to specify the ml_mol, 
+        # args.file is only useful for metadynamics where we need the 
+        # topology to extract the right CV atoms
         system = PureSystem(
             file=args.file,
             ml_mol=args.ml_mol,
@@ -207,6 +261,8 @@ def main():
             rest2=args.rest2,
             write_gmx=args.write_gmx,
         )
+    else:
+        raise ValueError(f"System type {args.system_type} not recognised!")
     if args.run_type == "md":
         system.run_mixed_md(
             args.steps,
@@ -223,13 +279,16 @@ def main():
             steps=args.steps,
             equilibration_protocol=args.equil,
             decouple=args.decouple,
-            checkpoint_interval=args.interval
+            checkpoint_interval=args.interval,
         )
     elif args.run_type == "neq":
         system.run_neq_switching(args.steps, args.interval)
+    elif args.run_type == "atm":
+        system.run_atm(args.steps, args.interval)
     else:
         raise ValueError(f"run_type {args.run_type} was not recognised")
 
 
 if __name__ == "__main__":
+    display_banner()
     main()
