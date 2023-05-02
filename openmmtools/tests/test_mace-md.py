@@ -92,6 +92,25 @@ def test_periodic_pure_mace_nnpops_nl():
     assert os.path.exists(os.path.join(JUNK_DIR,"output_water_nnpops.pdb"))
     assert os.path.getsize(os.path.join(JUNK_DIR,"output_water_nnpops.pdb")) > 0
 
+
+def test_periodic_pure_mace_nnpops_nl_npt():
+
+    system=PureSystem(
+      	ml_mol=os.path.join(TEST_DIR, "waterbox.xyz"),
+        model_path=model_path,
+        potential="mace",
+        output_dir=JUNK_DIR,
+        temperature=298,
+        nl="nnpops",
+        pressure=1.0
+    )
+
+    system.run_mixed_md(
+        steps=100, interval=25, output_file="output_water_nnpops_npt.pdb", restart=False,
+    )
+    assert os.path.exists(os.path.join(JUNK_DIR,"output_water_nnpops_npt.pdb"))
+    assert os.path.getsize(os.path.join(JUNK_DIR,"output_water_nnpops_npt.pdb")) > 0
+    
 def test_hybrid_system_nnpops_nl():
     system = MixedSystem(
         file=os.path.join(TEST_DIR, "ejm_31.sdf"),
