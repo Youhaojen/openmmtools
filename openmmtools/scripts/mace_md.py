@@ -23,8 +23,6 @@ class ConsoleColours:
     BLINKING = "\33[5m"
 
 
-
-
 def main():
     banner = f"""{ConsoleColours.CYAN}
 
@@ -150,6 +148,8 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
         default="UNK",
         type=str,
     )
+    parser.add_argument("--nl", help="which neighbour list to use", choices=["nnpops", "torch"]
+                        , default="nnpops")
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
     parser.add_argument("--rest2", help="Switch on REST2", action="store_true")
     parser.add_argument(
@@ -218,8 +218,8 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
     print("Interpolate: ", interpolate)
 
     if args.system_type == "pure":
-        # if we're running a pure system, we need to specify the ml_mol, 
-        # args.file is only useful for metadynamics where we need the 
+        # if we're running a pure system, we need to specify the ml_mol,
+        # args.file is only useful for metadynamics where we need the
         # topology to extract the right CV atoms
         system = PureSystem(
             file=args.file,
@@ -230,6 +230,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             temperature=args.temperature,
             pressure=args.pressure,
             dtype=dtype,
+            nl=args.nl,
             timestep=args.timestep,
             smff=args.smff,
             boxsize=args.box,
@@ -250,6 +251,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             padding=args.padding,
             temperature=args.temperature,
             dtype=dtype,
+            nl=args.nl,
             output_dir=args.output_dir,
             smff=args.smff,
             pressure=args.pressure,

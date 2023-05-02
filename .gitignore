@@ -101,3 +101,6 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+
+examples/example_data/compiled_models

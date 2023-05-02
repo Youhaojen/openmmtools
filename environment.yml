@@ -9,11 +9,12 @@ dependencies:
   - matplotlib-base=3.6.1
   - mdtraj=1.9.7
   - openff-forcefields
-  - netcdf4
-  - mpi4py
-  - openff-toolkit=0.10.6
-  - openmm=8.0.0beta
-  - openmm-torch=1.0beta
+  - netcdf4=1.6.2
+  - openff-toolkit=0.13.0
+  - openmm=8.0.0
+  - nnpops
+  - numba
+  - openmm-torch
   - openmmforcefields=0.11.2
   - parmed=3.4.3
   - pymbar=3.*
@@ -22,9 +23,10 @@ dependencies:
   - smirnoff99frosst=1.1.0
   - pip
   - mdanalysis
+  - libnetcdf=4.8.1
   - torchani=2.2.2
   - pip:
-    - numba
+    - mpi4py
     - amberlite==22.0
     - amberutils==21.0
     - ase==3.22.1

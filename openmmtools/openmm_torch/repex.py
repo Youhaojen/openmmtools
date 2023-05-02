@@ -6,12 +6,15 @@ import openmm
 from openmm import unit, app
 from openmm.app import Topology
 import mdtraj
+from sklearn.random_projection import sample_without_replacement
 from openmmtools import mcmc
 from openmmtools.multistate import replicaexchange, multistatesampler
 from openmmtools.multistate.utils import NNPCompatibilityMixin
 from typing import Dict, Iterable, Optional, List
 import os
 import logging
+
+from openmmtools.states import SamplerState
 
 
 def deserialize_xml(filename):
@@ -40,7 +43,6 @@ def get_atoms_from_resname(
         atoms = topology.select(f"chainid == {nnpify_id}")
         return atoms
     elif nnpify_type == "resname":
-        print([r.name for r in topology.residues()])
         all_resnames = [
             res.name for res in topology.residues() if res.name == nnpify_id
         ]
@@ -92,6 +94,7 @@ class MixedSystemConstructor:
         nnp_potential: str = "ani2x",
         implementation: str = "nnpops",
         interpolate: bool = True,
+        atom_indices=None,
         **createMixedSystem_kwargs,
     ):
         """
@@ -103,7 +106,11 @@ class MixedSystemConstructor:
         self._implementation = implementation
         self._interpolate = interpolate
 
-        self._atom_indices = get_atoms_from_resname(topology, nnpify_id, nnpify_type)
+        self._atom_indices = (
+            get_atoms_from_resname(topology, nnpify_id, nnpify_type)
+            if atom_indices is None
+            else atom_indices
+        )
         print(f"Treating atom indices {self._atom_indices} with ML potential")
         assert_no_residue_constraints(system, self._atom_indices)
         self._nnp_potential_str = nnp_potential
@@ -112,6 +119,7 @@ class MixedSystemConstructor:
         )
         # pop the atoms_obj from the kwargs
         self._createMixedSystem_kwargs = createMixedSystem_kwargs
+        print(self._createMixedSystem_kwargs)
 
     @property
     def mixed_system(self):
