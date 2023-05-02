@@ -120,7 +120,6 @@ class MACESystemBase(ABC):
         smff: str = "1.0",
         minimise: bool = True,
         mm_only: bool = False,
-        rest2: bool = False,
     ) -> None:
         super().__init__()
 
@@ -133,7 +132,6 @@ class MACESystemBase(ABC):
         self.timestep = timestep * femtosecond
         self.dtype = dtype
         self.nl = nl
-        self.rest2 = rest2
         self.output_dir = output_dir
         self.mm_only = mm_only
         self.minimise = minimise
@@ -468,7 +466,6 @@ class MACESystemBase(ABC):
 
         return alchemical_system
 
-
     def run_neq_switching(self, steps: int, interval: int) -> float:
         """Compute the protocol work performed by switching from the MM description to the MM/ML through lambda_interpolate
 
@@ -538,22 +535,25 @@ class MixedSystem(MACESystemBase):
         file: str,
         ml_mol: str,
         model_path: str,
-        forcefields: List[str],
         resname: str,
         nnpify_type: str,
-        padding: float,
-        ionicStrength: float,
-        nonbondedCutoff: float,
         potential: str,
-        temperature: float,
-        dtype: torch.dtype,
-        output_dir: str,
-        decouple: bool,
         nl: str,
-        interpolate: bool,
-        minimise: bool,
-        mm_only: bool,
-        rest2: bool,
+        output_dir: str,
+        padding: float = 1.2,
+        ionicStrength: float = 0.15,
+        forcefields: List[str] = [
+            "amber/protein.ff14SB.xml",
+            "amber14/DNA.OL15.xml",
+            "amber/tip3p_standard.xml"
+        ],
+        nonbondedCutoff: float = 1.0,
+        temperature: float=298,
+        dtype: torch.dtype = torch.float64,
+        decouple: bool = False,
+        interpolate: bool = False,
+        minimise: bool=True,
+        mm_only: bool=False,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
@@ -577,7 +577,6 @@ class MixedSystem(MACESystemBase):
             nl=nl,
             minimise=minimise,
             mm_only=mm_only,
-            rest2=rest2,
         )
 
         self.forcefields = forcefields
@@ -600,7 +599,6 @@ class MixedSystem(MACESystemBase):
             file=file,
             ml_mol=ml_mol,
             model_path=model_path,
-            pressure=pressure,
         )
 
     def create_system(
@@ -608,7 +606,6 @@ class MixedSystem(MACESystemBase):
         file: str,
         model_path: str,
         ml_mol: str,
-        pressure: Optional[float],
     ) -> None:
         """Creates the mixed system from a purely mm system
 
@@ -621,7 +618,6 @@ class MixedSystem(MACESystemBase):
         else:
             atoms, molecule = None, None
         # set the default topology to that of the ml molecule, this will get overwritten below
-        # topology = molecule.to_topology().to_openmm()
 
         # Handle a complex, passed as a pdb file
         if file.endswith(".pdb"):
@@ -711,7 +707,7 @@ class MixedSystem(MACESystemBase):
             nonbondedMethod=PME
             if self.modeller.topology.getPeriodicBoxVectors() is not None
             else CutoffNonPeriodic,
-            nonbondedCutoff=self.nonbondedCutoff * nanometer,
+            nonbondedCutoff=self.nonbondedCutoff * nanometers,
             constraints=None if "unconstrained" in self.SM_FF else HBonds,
         )
 

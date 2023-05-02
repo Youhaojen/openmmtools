@@ -119,7 +119,6 @@ class MixedSystemConstructor:
         )
         # pop the atoms_obj from the kwargs
         self._createMixedSystem_kwargs = createMixedSystem_kwargs
-        print(self._createMixedSystem_kwargs)
 
     @property
     def mixed_system(self):

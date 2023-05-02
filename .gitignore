@@ -104,3 +104,5 @@ ENV/
 
 
 examples/example_data/compiled_models
+examples/example_data/junk/*
+*.pt
