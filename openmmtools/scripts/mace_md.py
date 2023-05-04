@@ -155,7 +155,6 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
         default="nnpops",
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
-    parser.add_argument("--rest2", help="Switch on REST2", action="store_true")
     parser.add_argument(
         "--model_path",
         "-m",
@@ -264,7 +263,6 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             minimise=minimise,
             mm_only=args.mm_only,
             water_model=args.water_model,
-            rest2=args.rest2,
             write_gmx=args.write_gmx,
         )
     else:

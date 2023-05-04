@@ -308,6 +308,7 @@ class MACESystemBase(ABC):
         dcd_reporter = DCDReporter(
             file=os.path.join(self.output_dir, "output.dcd"),
             reportInterval=interval,
+            append=restart
         )
         simulation.reporters.append(dcd_reporter)
         hdf5_reporter = HDF5Reporter(
@@ -882,7 +883,7 @@ class PureSystem(MACESystemBase):
         else:
             raise NotImplementedError
 
-        ml_potential = MLPotential("mace", model_path=model_path)
+        ml_potential = MLPotential(self.potential, model_path=model_path)
         self.system = ml_potential.createSystem(topology, dtype=self.dtype, nl=self.nl)
 
         # if pressure is not None:
