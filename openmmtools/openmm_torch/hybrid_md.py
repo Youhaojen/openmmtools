@@ -296,7 +296,6 @@ class MACESystemBase(ABC):
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=False,
             )
         )
         # we need this to hold the box vectors for NPT simulations
