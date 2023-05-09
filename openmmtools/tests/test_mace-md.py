@@ -44,7 +44,8 @@ def test_nonperiodic_pure_mace_nnpops_nl():
         potential="mace",
         output_dir=JUNK_DIR,
         temperature=298,
-        nl="nnpops"
+        nl="nnpops",
+        minimise=False
     )
 
     system.run_mixed_md(

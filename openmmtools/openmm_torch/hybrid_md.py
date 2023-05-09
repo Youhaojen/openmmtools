@@ -16,7 +16,6 @@ from openmm import (
     NoseHooverIntegrator,
     RPMDMonteCarloBarostat,
 )
-import re
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
 from mdtraj.reporters import HDF5Reporter, NetCDFReporter
@@ -296,6 +295,7 @@ class MACESystemBase(ABC):
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
+                enforcePeriodicBox=False,
             )
         )
         # we need this to hold the box vectors for NPT simulations
