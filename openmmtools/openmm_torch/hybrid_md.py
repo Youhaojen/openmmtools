@@ -105,6 +105,7 @@ class MACESystemBase(ABC):
     mm_only: bool
     nl: str
     remove_cmm: bool
+    unwrap: bool
 
     def __init__(
         self,
@@ -122,6 +123,7 @@ class MACESystemBase(ABC):
         minimise: bool = True,
         mm_only: bool = False,
         remove_cmm: bool = False,
+        unwrap: bool = False,
     ) -> None:
         super().__init__()
 
@@ -138,6 +140,7 @@ class MACESystemBase(ABC):
         self.remove_cmm = remove_cmm
         self.mm_only = mm_only
         self.minimise = minimise
+        self.unwrap = unwrap
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -301,7 +304,7 @@ class MACESystemBase(ABC):
             PDBReporter(
                 file=os.path.join(self.output_dir, output_file),
                 reportInterval=interval,
-                enforcePeriodicBox=False,
+                enforcePeriodicBox=False if self.unwrap else True,
             )
         )
         # we need this to hold the box vectors for NPT simulations
@@ -313,7 +316,8 @@ class MACESystemBase(ABC):
         dcd_reporter = DCDReporter(
             file=os.path.join(self.output_dir, "output.dcd"),
             reportInterval=interval,
-            append=restart
+            append=restart,
+            enforcePeriodicBox=False if self.unwrap else True,
         )
         simulation.reporters.append(dcd_reporter)
         hdf5_reporter = HDF5Reporter(
@@ -362,7 +366,7 @@ class MACESystemBase(ABC):
         restart: bool,
         decouple: bool,
         steps: int,
-        intervals_per_lambda_window: int = 10,
+        steps_per_mc_move: int = 1000,
         steps_per_equilibration_interval: int = 1000,
         equilibration_protocol: str = "minimise",
         checkpoint_interval: int = 10,
@@ -384,7 +388,7 @@ class MACESystemBase(ABC):
             mcmc_moves_kwargs={
                 "timestep": 1.0 * femtoseconds,
                 "collision_rate": 10.0 / picoseconds,
-                "n_steps": 1000,
+                "n_steps": steps_per_mc_move,
                 "reassign_velocities": False,
                 "n_restart_attempts": 20,
             },
@@ -569,6 +573,7 @@ class MixedSystem(MACESystemBase):
         cv2: Optional[str] = None,
         write_gmx: bool = False,
         remove_cmm=False,
+        unwrap=False,
     ) -> None:
         super().__init__(
             file=file,
@@ -585,6 +590,7 @@ class MixedSystem(MACESystemBase):
             minimise=minimise,
             mm_only=mm_only,
             remove_cmm=remove_cmm,
+            unwrap=unwrap,
         )
 
         self.forcefields = forcefields
@@ -810,6 +816,7 @@ class PureSystem(MACESystemBase):
         smff: str = "1.0",
         minimise: bool = True,
         remove_cmm: bool = False,
+        unwrap: bool = False,
     ) -> None:
 
         super().__init__(
@@ -827,6 +834,7 @@ class PureSystem(MACESystemBase):
             smff=smff,
             minimise=minimise,
             remove_cmm=remove_cmm,
+            unwrap=unwrap
         )
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
