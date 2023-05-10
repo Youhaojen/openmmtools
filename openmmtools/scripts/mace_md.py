@@ -205,7 +205,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
     if args.water_model == "tip3p":
         args.forcefields.append("amber/tip3p_standard.xml")
     elif args.water_model == "tip4pew":
-        args.forcefields.append("amber/tip4pew.xml")
+        args.forcefields.append("amber14/tip4pew.xml")
     else:
         raise ValueError(f"Water model {args.water_model} not recognised")
 

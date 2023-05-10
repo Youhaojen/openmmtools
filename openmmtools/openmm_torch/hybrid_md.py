@@ -686,7 +686,7 @@ class MixedSystem(MACESystemBase):
             interchange.to_gro(os.path.join(self.output_dir, "conf.gro"))
         if self.padding > 0:
             if "tip4p" in self.water_model:
-                modeller.addExtraParticles(forcefield)
+                self.modeller.addExtraParticles(forcefield)
             self.modeller.addSolvent(
                 forcefield,
                 model=self.water_model,

@@ -12,144 +12,68 @@ print(TEST_DIR)
 JUNK_DIR = os.path.join(TEST_DIR, "junk")
 model_path = os.path.join(TEST_DIR,"MACE_SPICE_larger.model")
 
-
-
-def test_nonperiodic_pure_mace_torch_nl():
-
+@pytest.mark.parametrize("remove_cmm", [True, False])
+@pytest.mark.parametrize("file", ["ejm_31.sdf", "waterbox.xyz"])
+@pytest.mark.parametrize("nl", ["torch", "nnpops"])
+def test_pure_mace(file, nl, remove_cmm):
+    file_stub = file.split(".")[0]
+    cmm = "cmm" if remove_cmm else "nocmm"
     system=PureSystem(
-      	ml_mol=os.path.join(TEST_DIR, "ejm_31.sdf"),
+      	ml_mol=os.path.join(TEST_DIR, file),
         model_path=model_path,
         potential="mace",
         output_dir=JUNK_DIR,
         temperature=298,
-        nl="torch"
+        nl=nl,
+        pressure=1.0 if file_stub == "waterbox" else None,
+        remove_cmm=remove_cmm,
     )
-
+    output_file = f"output_pure_{file_stub}_{nl}_{cmm}.pdb"
     system.run_mixed_md(
-        steps=100, interval=25, output_file="output_sm_torch.pdb", restart=False,
+        steps=100, interval=25, output_file=output_file, restart=False,
     )
-
 
     # check the output file exists and is larger than 0 bytes
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_sm_torch.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_sm_torch.pdb")) > 0
+    assert os.path.exists(os.path.join(JUNK_DIR, output_file))
+    assert os.path.getsize(os.path.join(JUNK_DIR, output_file)) > 0
 
-
-    
-def test_nonperiodic_pure_mace_nnpops_nl():
-
-    system=PureSystem(
-      	ml_mol=os.path.join(TEST_DIR, "ejm_31.sdf"),
-        model_path=model_path,
-        potential="mace",
-        output_dir=JUNK_DIR,
-        temperature=298,
-        nl="nnpops",
-        minimise=False
-    )
-
-    system.run_mixed_md(
-        steps=100, interval=25, output_file="output_sm_nnpops.pdb", restart=False,
-    )
-
-
-    # check the output file exists and is larger than 0 bytes
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_sm_nnpops.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_sm_nnpops.pdb")) > 0
-
-
-def test_periodic_pure_mace_torch_nl():
-
-    system=PureSystem(
-      	ml_mol=os.path.join(TEST_DIR, "waterbox.xyz"),
-        model_path=model_path,
-        potential="mace",
-        output_dir=JUNK_DIR,
-        temperature=298,
-        nl="torch"
-    )
-
-    system.run_mixed_md(
-        steps=100, interval=25, output_file="output_water_torch.pdb", restart=False,
-    )
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_water_torch.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_water_torch.pdb")) > 0
-
-
-def test_periodic_pure_mace_nnpops_nl():
-
-    system=PureSystem(
-      	ml_mol=os.path.join(TEST_DIR, "waterbox.xyz"),
-        model_path=model_path,
-        potential="mace",
-        output_dir=JUNK_DIR,
-        temperature=298,
-        nl="nnpops"
-    )
-
-    system.run_mixed_md(
-        steps=100, interval=25, output_file="output_water_nnpops.pdb", restart=False,
-    )
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_water_nnpops.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_water_nnpops.pdb")) > 0
-
-
-def test_periodic_pure_mace_nnpops_nl_npt():
-
-    system=PureSystem(
-      	ml_mol=os.path.join(TEST_DIR, "waterbox.xyz"),
-        model_path=model_path,
-        potential="mace",
-        output_dir=JUNK_DIR,
-        temperature=298,
-        nl="nnpops",
-        pressure=1.0
-    )
-
-    system.run_mixed_md(
-        steps=100, interval=25, output_file="output_water_nnpops_npt.pdb", restart=False,
-    )
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_water_nnpops_npt.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_water_nnpops_npt.pdb")) > 0
-    
-def test_hybrid_system_nnpops_nl():
+@pytest.mark.parametrize("water_model", ["tip3p", "tip4pew"])
+@pytest.mark.parametrize("mm_only", [True, False])
+@pytest.mark.parametrize("remove_cmm", [True, False])
+@pytest.mark.parametrize("nl", ["torch", "nnpops"])
+def test_hybrid_system_nnpops_nl(nl, remove_cmm, mm_only, water_model):
+    cmm = "cmm" if remove_cmm else "nocmm"
+    mm = "mm_only" if mm_only else "mm_and_ml"
+    forcefields = [
+            "amber/protein.ff14SB.xml",
+            "amber14/DNA.OL15.xml",
+            "amber/tip3p_standard.xml"
+        ] if water_model == "tip3p" else [
+            "amber/protein.ff14SB.xml",
+            "amber14/DNA.OL15.xml",
+            "amber14/tip4pew.xml"
+        ]
     system = MixedSystem(
         file=os.path.join(TEST_DIR, "ejm_31.sdf"),
         ml_mol=os.path.join(TEST_DIR, "ejm_31.sdf"),
         model_path=model_path,
+        forcefields=forcefields,
         potential="mace",
         output_dir=JUNK_DIR,
         temperature=298,
-        nl="nnpops",
+        nl=nl,
         nnpify_type="resname",
         resname="UNK",
-        minimise=False
+        minimise=False,
+        water_model=water_model,
+
     )
+    output_file = f"output_hybrid_{nl}_{cmm}_{mm}.pdb"
 
     system.run_mixed_md(
-        steps=100, interval=25, output_file="output_hybrid_nnpops.pdb", restart=False,)
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_hybrid_nnpops.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_hybrid_nnpops.pdb")) > 0
+        steps=100, interval=25, output_file=output_file, restart=False)
+    assert os.path.exists(os.path.join(JUNK_DIR, output_file))
+    assert os.path.getsize(os.path.join(JUNK_DIR, output_file)) > 0
 
 
-def test_hybrid_system_torch_nl():
-
-    system = MixedSystem(
-        file=os.path.join(TEST_DIR, "ejm_31.sdf"),
-        ml_mol=os.path.join(TEST_DIR, "ejm_31.sdf"),
-        model_path=model_path,
-        potential="mace",
-        output_dir=JUNK_DIR,
-        temperature=298,
-        nl="torch",
-        nnpify_type="resname",
-        resname="UNK",
-        minimise=False
-    )
-
-    system.run_mixed_md(
-        steps=100, interval=25, output_file="output_hybrid_torch.pdb", restart=False,)
-    assert os.path.exists(os.path.join(JUNK_DIR,"output_hybrid_torch.pdb"))
-    assert os.path.getsize(os.path.join(JUNK_DIR,"output_hybrid_torch.pdb")) > 0
-
-
+# test remove cmm for pure system
