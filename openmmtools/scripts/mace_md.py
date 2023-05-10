@@ -69,6 +69,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
     parser.add_argument("--temperature", type=float, default=298.15)
     parser.add_argument("--no_minimise", action="store_true")
     parser.add_argument("--pressure", type=float, default=None)
+    parser.add_argument("--remove_cmm", action="store_true")
     parser.add_argument(
         "--integrator",
         type=str,
@@ -238,6 +239,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             smff=args.smff,
             boxsize=args.box,
             minimise=minimise,
+            remove_cmm=args.remove_cmm,
         )
 
     elif args.system_type == "hybrid":
@@ -264,6 +266,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             mm_only=args.mm_only,
             water_model=args.water_model,
             write_gmx=args.write_gmx,
+            remove_cmm=args.remove_cmm,
         )
     else:
         raise ValueError(f"System type {args.system_type} not recognised!")

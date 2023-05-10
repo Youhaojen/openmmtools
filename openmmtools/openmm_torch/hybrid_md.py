@@ -15,6 +15,7 @@ from openmm import (
     CustomTorsionForce,
     NoseHooverIntegrator,
     RPMDMonteCarloBarostat,
+    CMMotionRemover
 )
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
@@ -103,6 +104,7 @@ class MACESystemBase(ABC):
     system: System
     mm_only: bool
     nl: str
+    remove_cmm: bool
 
     def __init__(
         self,
@@ -119,6 +121,7 @@ class MACESystemBase(ABC):
         smff: str = "1.0",
         minimise: bool = True,
         mm_only: bool = False,
+        remove_cmm: bool = False,
     ) -> None:
         super().__init__()
 
@@ -132,6 +135,7 @@ class MACESystemBase(ABC):
         self.dtype = dtype
         self.nl = nl
         self.output_dir = output_dir
+        self.remove_cmm = remove_cmm
         self.mm_only = mm_only
         self.minimise = minimise
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
@@ -214,7 +218,9 @@ class MACESystemBase(ABC):
             raise ValueError(
                 f"Unrecognized integrator name {integrator_name}, must be one of ['langevin', 'nose-hoover', 'rpmd']"
             )
-
+        if self.remove_cmm:
+            logger.info("Using CMM remover")
+            self.system.addForce(CMMotionRemover())
         # optionally run NPT with and MC barostat
         if self.pressure is not None:
             if integrator_name == "rpmd":
@@ -562,6 +568,7 @@ class MixedSystem(MACESystemBase):
         cv1: Optional[str] = None,
         cv2: Optional[str] = None,
         write_gmx: bool = False,
+        remove_cmm=False,
     ) -> None:
         super().__init__(
             file=file,
@@ -577,6 +584,7 @@ class MixedSystem(MACESystemBase):
             nl=nl,
             minimise=minimise,
             mm_only=mm_only,
+            remove_cmm=remove_cmm,
         )
 
         self.forcefields = forcefields
@@ -801,6 +809,7 @@ class PureSystem(MACESystemBase):
         timestep: float = 1.0,
         smff: str = "1.0",
         minimise: bool = True,
+        remove_cmm: bool = False,
     ) -> None:
 
         super().__init__(
@@ -817,6 +826,7 @@ class PureSystem(MACESystemBase):
             timestep=timestep,
             smff=smff,
             minimise=minimise,
+            remove_cmm=remove_cmm,
         )
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
