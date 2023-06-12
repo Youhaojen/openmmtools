@@ -5,6 +5,7 @@ import logging
 import torch
 import os
 from prettytable import PrettyTable
+import time
 
 logging.getLogger("openmmtools.multistate").setLevel(logging.ERROR)
 
@@ -67,15 +68,20 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
     parser.add_argument("--ionicStrength", "-i", default=0.15, type=float)
     parser.add_argument("--potential", default="mace", type=str)
     parser.add_argument("--temperature", type=float, default=298.15)
-    parser.add_argument("--no_minimise", action="store_true")
+    parser.add_argument("--minimiser", type=str, choices=["openmm", "ase"], default=None)
     parser.add_argument("--pressure", type=float, default=None)
     parser.add_argument("--remove_cmm", action="store_true")
-    parser.add_argument("--unwrap", action="store_true", help="Control whether the reporters write unwrapped coordinates (useful for materials systems with no molecules)")
+    parser.add_argument("--set_temperature", action="store_true")
+    parser.add_argument(
+        "--unwrap",
+        action="store_true",
+        help="Control whether the reporters write unwrapped coordinates (useful for materials systems with no molecules)",
+    )
     parser.add_argument(
         "--integrator",
         type=str,
         default="langevin",
-        choices=["langevin", "nose-hoover", "rpmd"],
+        choices=["langevin", "nose-hoover", "rpmd", "verlet"],
     )
     parser.add_argument(
         "--timestep",
@@ -90,6 +96,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             to a separate array on the atoms object, writes back out",
     )
     parser.add_argument("--replicas", type=int, default=10)
+    parser.add_argument("--direction", type=str, choices=["forward", "reverse"], default="forward")
     parser.add_argument(
         "--output_file",
         "-o",
@@ -215,12 +222,12 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             "Cannot run a pure MACE system with only the MM forcefield\
                  - please use a hybrid system"
         )
-    minimise = False if args.no_minimise else True
-    print("Minimise: ", minimise)
 
     # Only need interpolation when running repex and not decoupling
-    interpolate = True if (args.run_type == "repex" and not args.decouple) else False
-    print("Interpolate: ", interpolate)
+    interpolate = True if (args.run_type in ["repex", "neq"] and not args.decouple) else False
+    
+    if args.minimiser == "ase" and args.system_type != "pure":
+        raise ValueError("Cannot use ASE minimiser with a hybrid system, use openmm")
 
     if args.system_type == "pure":
         # if we're running a pure system, we need to specify the ml_mol,
@@ -239,9 +246,10 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             timestep=args.timestep,
             smff=args.smff,
             boxsize=args.box,
-            minimise=minimise,
+            minimiser=args.minimiser,
             remove_cmm=args.remove_cmm,
             unwrap=args.unwrap,
+            set_temperature=args.set_temperature,
         )
 
     elif args.system_type == "hybrid":
@@ -264,12 +272,13 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             pressure=args.pressure,
             decouple=args.decouple,
             interpolate=interpolate,
-            minimise=minimise,
+            minimiser=args.minimiser,
             mm_only=args.mm_only,
             water_model=args.water_model,
             write_gmx=args.write_gmx,
             remove_cmm=args.remove_cmm,
             unwrap=args.unwrap,
+            set_temperature=args.set_temperature,
         )
     else:
         raise ValueError(f"System type {args.system_type} not recognised!")
@@ -292,13 +301,20 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             checkpoint_interval=args.interval,
         )
     elif args.run_type == "neq":
-        system.run_neq_switching(args.steps, args.interval)
+        system.run_neq_switching(steps=args.steps,
+                                 interval = args.interval,
+                                 restart=args.restart,
+                                 output_file=args.output_file,
+                                 direction=args.direction)
     elif args.run_type == "atm":
+        raise NotImplementedError
         system.run_atm(args.steps, args.interval)
     else:
         raise ValueError(f"run_type {args.run_type} was not recognised")
 
 
 if __name__ == "__main__":
-    display_banner()
+    t1 = time.time()
     main()
+    t2 = time.time()
+    print(f"MACE-MD job completed in {t2-t1:.2f} seconds")

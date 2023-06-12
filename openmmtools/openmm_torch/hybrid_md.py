@@ -1,9 +1,12 @@
 import sys
+from ase.io import read, write
+import random
 import mdtraj
-from ase.io import read
 import torch
 import time
+from mace.calculators import MACECalculator
 import numpy as np
+from tempfile import mkstemp
 from ase import Atoms
 from rdkit.Chem.rdmolfiles import MolFromPDBFile, MolFromXYZFile
 from openmm.openmm import System
@@ -14,8 +17,9 @@ from openmm import (
     MonteCarloBarostat,
     CustomTorsionForce,
     NoseHooverIntegrator,
+    VerletIntegrator,
     RPMDMonteCarloBarostat,
-    CMMotionRemover
+    CMMotionRemover,
 )
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
@@ -33,6 +37,7 @@ from openmm.app import (
     PME,
     HBonds,
 )
+from ase.optimize import LBFGS
 from openmm.app.metadynamics import Metadynamics, BiasVariable
 from openmm.app.topology import Topology
 from openmm.app.element import Element
@@ -106,6 +111,7 @@ class MACESystemBase(ABC):
     nl: str
     remove_cmm: bool
     unwrap: bool
+    set_temperature: bool
 
     def __init__(
         self,
@@ -115,15 +121,16 @@ class MACESystemBase(ABC):
         output_dir: str,
         temperature: float,
         nl: str,
+        minimiser: str,
         pressure: Optional[float] = None,
         dtype: torch.dtype = torch.float64,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
-        minimise: bool = True,
         mm_only: bool = False,
         remove_cmm: bool = False,
         unwrap: bool = False,
+        set_temperature: bool = False
     ) -> None:
         super().__init__()
 
@@ -136,10 +143,11 @@ class MACESystemBase(ABC):
         self.timestep = timestep * femtosecond
         self.dtype = dtype
         self.nl = nl
+        self.set_temperature = set_temperature
         self.output_dir = output_dir
         self.remove_cmm = remove_cmm
         self.mm_only = mm_only
-        self.minimise = minimise
+        self.minimiser= minimiser
         self.unwrap = unwrap
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
@@ -212,14 +220,17 @@ class MACESystemBase(ABC):
             integrator = NoseHooverIntegrator(
                 self.temperature, self.friction_coeff, self.timestep
             )
+        elif integrator_name == "verlet":
+            
+            integrator = VerletIntegrator(self.timestep)
         elif integrator_name == "rpmd":
             # note this requires a few changes to how we set positions
             integrator = RPMDIntegrator(
-                5, self.temperature, self.friction_coeff, self.timestep
+                8, self.temperature, self.friction_coeff, self.timestep
             )
         else:
             raise ValueError(
-                f"Unrecognized integrator name {integrator_name}, must be one of ['langevin', 'nose-hoover', 'rpmd']"
+                f"Unrecognized integrator name {integrator_name}, must be one of ['langevin', 'nose-hoover', 'rpmd', 'verlet']"
             )
         if self.remove_cmm:
             logger.info("Using CMM remover")
@@ -263,7 +274,7 @@ class MACESystemBase(ABC):
             else:
                 simulation.context.setPositions(self.modeller.getPositions())
                 # rpmd requires that the integrator be used to set positions
-            if self.minimise:
+            if self.minimiser == "openmm":
                 logging.info("Minimising energy...")
                 simulation.minimizeEnergy(maxIterations=10)
                 if isinstance(integrator, RPMDIntegrator):
@@ -284,6 +295,9 @@ class MACESystemBase(ABC):
             else:
                 logger.info("Skipping minimisation step")
 
+        if self.set_temperature:
+            logger.info(f"Setting temperature to {self.temperature} K")
+            simulation.context.setVelocitiesToTemperature(self.temperature)
         reporter = StateDataReporter(
             file=sys.stdout,
             reportInterval=interval,
@@ -476,56 +490,123 @@ class MACESystemBase(ABC):
 
         return alchemical_system
 
-    def run_neq_switching(self, steps: int, interval: int) -> float:
+
+          
+
+    def run_neq_switching(
+        self,steps: int, interval: int, output_file: str, restart: bool,
+        direction: str = "forward"
+    ) -> List[float]:
         """Compute the protocol work performed by switching from the MM description to the MM/ML through lambda_interpolate
+        
+        Ideally this will take a series of snapshots, probably as a pdb file, and run the switching 
 
         :param int steps: number of steps in non-equilibrium switching simulation
         :param int interval: reporterInterval
         :return float: protocol work from the integrator
         """
-        alchemical_functions = {"lambda_interpolate": "lambda"}
+
+        if direction not in ["forward", "reverse"]:
+            raise ValueError("direction must be either forward or reverse")
+        
+        alchemical_functions = {"lambda_interpolate": "lambda"} if direction == "forward" else {"lambda_interpolate": "1 - lambda"}
+
+        # steps = int(switching_time / self.timestep.value_in_unit(picosecond))
+        logger.info("Running NEQ switching for {} steps".format(steps))
+        # input file contains a trajectory of snapshots for which we need the work value associated with the switching
+        # positions = self.neq_simulations_positions[positions_idx]
+        # output_file = os.path.join(self.output_dir, f"neq_{direction}_{positions_idx}.pdb")
+        # restart=False
+
+        # # prepare a set of positions to run the switching simulation for
+        # work_vals = []
+        # for pos in positions:
+
         integrator = AlchemicalNonequilibriumLangevinIntegrator(
             alchemical_functions=alchemical_functions,
             nsteps_neq=steps,
             temperature=self.temperature,
             collision_rate=self.friction_coeff,
             timestep=self.timestep,
+            measure_shadow_work=False,
         )
 
         simulation = Simulation(
             self.modeller.topology,
             self.system,
             integrator,
-            platformProperties={"Precision": "Double", "Threads": 16},
         )
         simulation.context.setPositions(self.modeller.getPositions())
 
-        logging.info("Minimising energy")
-        simulation.minimizeEnergy()
+        # set velocities to temperature
+        simulation.context.setVelocitiesToTemperature(self.temperature)
+
+        # simulation.minimizeEnergy()
 
         reporter = StateDataReporter(
             file=sys.stdout,
             reportInterval=interval,
             step=True,
             time=True,
+            totalEnergy=True,
             potentialEnergy=True,
+            density=True,
+            volume=True,
             temperature=True,
             speed=True,
+            progress=True,
             totalSteps=steps,
             remainingTime=True,
         )
         simulation.reporters.append(reporter)
-        # Append the snapshots to the pdb file
+        # keep periodic box off to make quick visualisation easier
         simulation.reporters.append(
             PDBReporter(
-                os.path.join(self.output_dir, "output_frames.pdb"),
-                steps / 80,
-                enforcePeriodicBox=True,
+                file=os.path.join(self.output_dir, output_file),
+                reportInterval=interval,
+                enforcePeriodicBox=False if self.unwrap else True,
             )
         )
+        # we need this to hold the box vectors for NPT simulations
+        netcdf_reporter = NetCDFReporter(
+            file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
+            reportInterval=interval,
+        )
+        simulation.reporters.append(netcdf_reporter)
+        dcd_reporter = DCDReporter(
+            file=os.path.join(self.output_dir, "output.dcd"),
+            reportInterval=interval,
+            append=restart,
+            enforcePeriodicBox=False if self.unwrap else True,
+        )
+        simulation.reporters.append(dcd_reporter)
+        hdf5_reporter = HDF5Reporter(
+            file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
+            reportInterval=interval,
+            velocities=True,
+        )
+        simulation.reporters.append(hdf5_reporter)
+        # Add an extra hash to any existing checkpoint files
+        checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith("#")]
+        for file in checkpoint_files:
+            os.rename(
+                os.path.join(self.output_dir, file),
+                os.path.join(self.output_dir, f"{file}#"),
+            )
+
+        checkpoint_filepath = os.path.join(self.output_dir, output_file[:-4] + ".chk")
+        # backup the existing checkpoint file
+        if os.path.isfile(checkpoint_filepath):
+            os.rename(checkpoint_filepath, checkpoint_filepath + "#")
+        checkpoint_reporter = CheckpointReporter(
+            file=checkpoint_filepath, reportInterval=interval
+        )
+        simulation.reporters.append(checkpoint_reporter)
+       
         # We need to take the final state
         simulation.step(steps)
-        protocol_work = integrator.get_protocol_work(dimensionless=True)
+        protocol_work = integrator.get_total_work(dimensionless=True)
+        print(f"Protocol work: {protocol_work}")
         return protocol_work
 
 
@@ -549,21 +630,21 @@ class MixedSystem(MACESystemBase):
         nnpify_type: str,
         potential: str,
         nl: str,
+        minimiser: str,
         output_dir: str,
         padding: float = 1.2,
         ionicStrength: float = 0.15,
         forcefields: List[str] = [
             "amber/protein.ff14SB.xml",
             "amber14/DNA.OL15.xml",
-            "amber/tip3p_standard.xml"
+            "amber/tip3p_standard.xml",
         ],
         nonbondedCutoff: float = 1.0,
-        temperature: float=298,
+        temperature: float = 298,
         dtype: torch.dtype = torch.float64,
         decouple: bool = False,
         interpolate: bool = False,
-        minimise: bool=True,
-        mm_only: bool=False,
+        mm_only: bool = False,
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
@@ -574,6 +655,7 @@ class MixedSystem(MACESystemBase):
         write_gmx: bool = False,
         remove_cmm=False,
         unwrap=False,
+        set_temperature=False
     ) -> None:
         super().__init__(
             file=file,
@@ -587,10 +669,11 @@ class MixedSystem(MACESystemBase):
             timestep=timestep,
             smff=smff,
             nl=nl,
-            minimise=minimise,
+            minimiser=minimiser,
             mm_only=mm_only,
             remove_cmm=remove_cmm,
             unwrap=unwrap,
+            set_temperature=set_temperature
         )
 
         self.forcefields = forcefields
@@ -777,6 +860,7 @@ class MixedSystem(MACESystemBase):
                     atoms_obj=atoms,
                     filename=model_path,
                     dtype=self.dtype,
+                    nl=self.nl,
                 ).mixed_system
 
             self.system = self.decouple_long_range(
@@ -807,6 +891,7 @@ class PureSystem(MACESystemBase):
         output_dir: str,
         temperature: float,
         nl: str,
+        minimiser: str,
         file: Optional[str] = None,
         boxsize: Optional[int] = None,
         pressure: Optional[float] = None,
@@ -814,9 +899,9 @@ class PureSystem(MACESystemBase):
         friction_coeff: float = 1.0,
         timestep: float = 1.0,
         smff: str = "1.0",
-        minimise: bool = True,
         remove_cmm: bool = False,
         unwrap: bool = False,
+        set_temperature: bool = False,
     ) -> None:
 
         super().__init__(
@@ -832,9 +917,10 @@ class PureSystem(MACESystemBase):
             friction_coeff=friction_coeff,
             timestep=timestep,
             smff=smff,
-            minimise=minimise,
+            minimiser=minimiser,
             remove_cmm=remove_cmm,
-            unwrap=unwrap
+            unwrap=unwrap,
+            set_temperature=set_temperature,
         )
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
 
@@ -855,6 +941,27 @@ class PureSystem(MACESystemBase):
         """
         # initialize the ase atoms for MACE
         atoms = read(ml_mol)
+        if self.minimiser == "ase":
+        # ensure the model was saved on the GPU
+            tmp_model = torch.load(model_path, map_location="cpu")
+            _, tmp_path = mkstemp(suffix=".pt")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            tmp_model = tmp_model.to(device)
+            torch.save(tmp_model, tmp_path)
+            calc = MACECalculator(
+                model_path=tmp_path,
+                device="cuda",
+            )
+            atoms.set_calculator(calc)
+            # minimise the system with ase
+            logger.info("Minimalising the system with ASE...")
+            opt = LBFGS(atoms)
+            opt.run(fmax=0.1)
+            os.remove(tmp_path)
+        
+        # write out minimised system
+        write(os.path.join(self.output_dir, "minimised.xyz"), atoms)
+
         if ml_mol.endswith(".xyz"):
             pos = atoms.get_positions() / 10
             box_vectors = atoms.get_cell() / 10

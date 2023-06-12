@@ -5,6 +5,7 @@ from openmm.app import ForceField
 from openmmforcefields.generators import SMIRNOFFTemplateGenerator
 import openmm
 from openmm.unit import kilojoules, mole, nanometer
+import numpy as np
 
 
 def set_smff(smff: str) -> str:
@@ -110,3 +111,12 @@ def remove_bonded_forces(
     # Create a new System from it.
 
     return openmm.XmlSerializer.deserialize(ET.tostring(root, encoding="unicode"))
+
+
+
+
+
+
+class NEQSimulation:
+    system: openmm.System
+    positions: List[np.ndarray]
