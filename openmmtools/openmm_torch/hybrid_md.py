@@ -299,7 +299,7 @@ class MACESystemBase(ABC):
             logger.info(f"Setting temperature to {self.temperature} K")
             simulation.context.setVelocitiesToTemperature(self.temperature)
         reporter = StateDataReporter(
-            file=sys.stdout,
+            file=os.path.join(self.output_dir, "md.log"),
             reportInterval=interval,
             step=True,
             time=True,
