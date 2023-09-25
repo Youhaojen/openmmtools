@@ -23,6 +23,8 @@ from openmm import (
 )
 import matplotlib.pyplot as plt
 from openmmtools.integrators import AlchemicalNonequilibriumLangevinIntegrator
+from openmmtools import states, mcmc
+from openmmtools.multistate.replicaexchange import ReplicaExchangeSampler
 from mdtraj.reporters import HDF5Reporter, NetCDFReporter
 from mdtraj.geometry.dihedral import indices_phi, indices_psi
 from openmm.app import (
@@ -311,6 +313,7 @@ class MACESystemBase(ABC):
             speed=True,
             progress=True,
             totalSteps=steps,
+            remainingTime=True,
         )
         simulation.reporters.append(reporter)
         # keep periodic box off to make quick visualisation easier
@@ -322,11 +325,11 @@ class MACESystemBase(ABC):
             )
         )
         # we need this to hold the box vectors for NPT simulations
-        netcdf_reporter = NetCDFReporter(
-            file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
-            reportInterval=interval,
-        )
-        simulation.reporters.append(netcdf_reporter)
+        # netcdf_reporter = NetCDFReporter(
+        #     file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
+        #     reportInterval=interval,
+        # )
+        # simulation.reporters.append(netcdf_reporter)
         dcd_reporter = DCDReporter(
             file=os.path.join(self.output_dir, "output.dcd"),
             reportInterval=interval,
@@ -334,12 +337,12 @@ class MACESystemBase(ABC):
             enforcePeriodicBox=False if self.unwrap else True,
         )
         simulation.reporters.append(dcd_reporter)
-        hdf5_reporter = HDF5Reporter(
-            file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
-            reportInterval=interval,
-            velocities=True,
-        )
-        simulation.reporters.append(hdf5_reporter)
+        # hdf5_reporter = HDF5Reporter(
+        #     file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
+        #     reportInterval=interval,
+        #     velocities=True,
+        # )
+        # simulation.reporters.append(hdf5_reporter)
         # Add an extra hash to any existing checkpoint files
         checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith("#")]
         for file in checkpoint_files:
@@ -365,6 +368,8 @@ class MACESystemBase(ABC):
             fig, ax = plt.subplots(1, 1)
             ax.imshow(fe)
             fig.savefig(os.path.join(self.output_dir, "free_energy.png"))
+            # also write the numpy array to disk
+            np.save(os.path.join(self.output_dir, "free_energy.npy"), fe)
 
         else:
             simulation.step(steps)
@@ -384,43 +389,55 @@ class MACESystemBase(ABC):
         steps_per_equilibration_interval: int = 1000,
         equilibration_protocol: str = "minimise",
         checkpoint_interval: int = 10,
+        repex_type: str = "interpolate"
     ) -> None:
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
         # even if restart has been set, disable if the checkpoint file was not found, enforce minimising the system
         if not repex_file_exists:
             restart = False
-        sampler = RepexConstructor(
-            mixed_system=self.system,
-            initial_positions=self.modeller.getPositions(),
-            intervals_per_lambda_window=2 * replicas,
-            steps_per_equilibration_interval=steps_per_equilibration_interval,
-            equilibration_protocol=equilibration_protocol,
-            temperature=self.temperature * kelvin,
-            n_states=replicas,
-            restart=restart,
-            decouple=decouple,
-            mcmc_moves_kwargs={
-                "timestep": 1.0 * femtoseconds,
-                "collision_rate": 10.0 / picoseconds,
-                "n_steps": steps_per_mc_move,
-                "reassign_velocities": False,
-                "n_restart_attempts": 20,
-            },
-            replica_exchange_sampler_kwargs={
-                "number_of_iterations": steps,
-                "online_analysis_interval": 10,
-                "online_analysis_minimum_iterations": 10,
-            },
-            storage_kwargs={
-                "storage": os.path.join(self.output_dir, "repex.nc"),
-                "checkpoint_interval": checkpoint_interval,
-                "analysis_particle_indices": get_atoms_from_resname(
-                    topology=self.modeller.topology,
-                    nnpify_id=self.resname,
-                    nnpify_type=self.nnpify_type,
-                ),
-            },
-        ).sampler
+        if repex_type == "interpolate":
+            sampler = RepexConstructor(
+                mixed_system=self.system,
+                initial_positions=self.modeller.getPositions(),
+                intervals_per_lambda_window=2 * replicas,
+                steps_per_equilibration_interval=steps_per_equilibration_interval,
+                equilibration_protocol=equilibration_protocol,
+                temperature=self.temperature * kelvin,
+                n_states=replicas,
+                restart=restart,
+                decouple=decouple,
+                mcmc_moves_kwargs={
+                    "timestep": 1.0 * femtoseconds,
+                    "collision_rate": 10.0 / picoseconds,
+                    "n_steps": steps_per_mc_move,
+                    "reassign_velocities": False,
+                    "n_restart_attempts": 20,
+                },
+                replica_exchange_sampler_kwargs={
+                    "number_of_iterations": steps,
+                    "online_analysis_interval": 10,
+                    "online_analysis_minimum_iterations": 10,
+                },
+                storage_kwargs={
+                    "storage": os.path.join(self.output_dir, "repex.nc"),
+                    "checkpoint_interval": checkpoint_interval,
+                    "analysis_particle_indices": get_atoms_from_resname(
+                        topology=self.modeller.topology,
+                        nnpify_id=self.resname,
+                        nnpify_type=self.nnpify_type,
+                    ),
+                },
+            ).sampler
+        elif repex_type == "temperature":
+            protocol = {'temperature': [300, 310, 330, 370, 450] * kelvin}
+            thermo_states = states.create_thermodynamic_state_protocol(self.system, protocol)
+            sampler_states = [states.SamplerState(positions=self.modeller.getPositions()) for _ in thermo_states]
+            langevin_move = mcmc.LangevinSplittingDynamicsMove(timestep=self.timestep * femtoseconds ,n_steps=steps)
+
+
+            sampler = ReplicaExchangeSampler(thermo_states, sampler_states, langevin_move)
+
+
 
         # do not minimsie if we are hot-starting the simulation from a checkpoint
         if not restart and equilibration_protocol == "minimise":
@@ -442,21 +459,20 @@ class MACESystemBase(ABC):
         # run well-tempered metadynamics
         mdtraj_topology = mdtraj.Topology.from_openmm(topology)
 
-        cv1_atom_indices = indices_psi(mdtraj_topology)
-        cv2_atom_indices = indices_phi(mdtraj_topology)
-        # logger.info(f"Selcted cv1 torsion atoms {cv1_atom_indices}")
-        # cv2_atom_indices = mdtraj_topology.select(cv2_dsl_string)
+        cv1_atom_indices = indices_psi(mdtraj_topology)[1]
+        cv2_atom_indices = indices_phi(mdtraj_topology)[1]
+        logger.info(f"Selcted cv1 torsion atoms {cv1_atom_indices}")
         # logger.info(f"Selcted cv2 torsion atoms {cv2_atom_indices}")
         # takes the mixed system parametrised in the init method and performs metadynamics
         # in the canonical case, this should just use the psi-phi backbone angles of the peptide
 
         cv1 = CustomTorsionForce("theta")
         # cv1.addTorsion(cv1_atom_indices)
-        cv1.addTorsion(*cv1_atom_indices[0])
+        cv1.addTorsion(*cv1_atom_indices)
         phi = BiasVariable(cv1, -np.pi, np.pi, biasWidth=0.5, periodic=True)
 
         cv2 = CustomTorsionForce("theta")
-        cv2.addTorsion(*cv2_atom_indices[0])
+        cv2.addTorsion(*cv2_atom_indices)
         psi = BiasVariable(cv2, -np.pi, np.pi, biasWidth=0.5, periodic=True)
         os.makedirs(os.path.join(self.output_dir, "metaD"), exist_ok=True)
         meta = Metadynamics(
@@ -568,11 +584,11 @@ class MACESystemBase(ABC):
             )
         )
         # we need this to hold the box vectors for NPT simulations
-        netcdf_reporter = NetCDFReporter(
-            file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
-            reportInterval=interval,
-        )
-        simulation.reporters.append(netcdf_reporter)
+        # netcdf_reporter = NetCDFReporter(
+        #     file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
+        #     reportInterval=interval,
+        # )
+        # simulation.reporters.append(netcdf_reporter)
         dcd_reporter = DCDReporter(
             file=os.path.join(self.output_dir, "output.dcd"),
             reportInterval=interval,
@@ -580,12 +596,12 @@ class MACESystemBase(ABC):
             enforcePeriodicBox=False if self.unwrap else True,
         )
         simulation.reporters.append(dcd_reporter)
-        hdf5_reporter = HDF5Reporter(
-            file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
-            reportInterval=interval,
-            velocities=True,
-        )
-        simulation.reporters.append(hdf5_reporter)
+        # hdf5_reporter = HDF5Reporter(
+        #     file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
+        #     reportInterval=interval,
+        #     velocities=True,
+        # )
+        # simulation.reporters.append(hdf5_reporter)
         # Add an extra hash to any existing checkpoint files
         checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith("#")]
         for file in checkpoint_files:
@@ -864,7 +880,7 @@ class MixedSystem(MACESystemBase):
                 ).mixed_system
 
             self.system = self.decouple_long_range(
-                self.system,
+                system,
                 solute_indices=get_atoms_from_resname(
                     self.modeller.topology, self.resname, self.nnpify_type
                 ),
@@ -949,14 +965,15 @@ class PureSystem(MACESystemBase):
             tmp_model = tmp_model.to(device)
             torch.save(tmp_model, tmp_path)
             calc = MACECalculator(
-                model_path=tmp_path,
+                model_paths=tmp_path,
                 device="cuda",
+                default_dtype=self.dtype.__str__().split(".")[1],
             )
             atoms.set_calculator(calc)
             # minimise the system with ase
-            logger.info("Minimalising the system with ASE...")
+            logger.info("Minimising with ASE...")
             opt = LBFGS(atoms)
-            opt.run(fmax=0.1)
+            opt.run(fmax=0.2)
             os.remove(tmp_path)
         
         # write out minimised system
