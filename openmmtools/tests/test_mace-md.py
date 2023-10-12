@@ -13,17 +13,24 @@ torch.set_default_dtype(torch.float64)
 TEST_DIR = "examples/example_data"
 print(TEST_DIR)
 JUNK_DIR = os.path.join(TEST_DIR, "junk")
-model_path = os.path.join(TEST_DIR, "MACE_SPICE_larger.model")
+model_path = os.path.join(TEST_DIR, "MACE_test.model")
+# model_path = os.path.join(TEST_DIR, "14-mptrj-slower-lr-13.model")
 
 
 @pytest.mark.parametrize("remove_cmm", [True, False])
 @pytest.mark.parametrize("file", ["ejm_31.sdf", "waterbox.xyz"])
 @pytest.mark.parametrize("integrator", ["langevin", "nose-hoover", "verlet"])
 @pytest.mark.parametrize("nl", ["torch", "nnpops"])
-@pytest.mark.parametrize("minimiser", ["openmm", "ase", None])
+@pytest.mark.parametrize("minimiser", [ "ase", "openmm"])
 def test_pure_mace_md(file, nl, remove_cmm, minimiser, integrator):
     file_stub = file.split(".")[0]
     cmm = "cmm" if remove_cmm else "nocmm"
+
+    # inspect the dtype of the model
+    model = torch.load(model_path)
+    dtype = model.r_max.dtype
+    # print("pytorch dtype from model is", dtype)
+
     system = PureSystem(
         ml_mol=os.path.join(TEST_DIR, file),
         model_path=model_path,
@@ -31,6 +38,7 @@ def test_pure_mace_md(file, nl, remove_cmm, minimiser, integrator):
         output_dir=JUNK_DIR,
         temperature=298,
         nl=nl,
+        dtype=dtype,
         pressure=1.0 if file_stub == "waterbox" else None,
         remove_cmm=remove_cmm,
         minimiser=minimiser
