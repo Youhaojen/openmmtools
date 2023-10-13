@@ -44,6 +44,6 @@ jobs:
         pip list
         
     - name: Check mace-md installation
-    - run: |
+      run: |
         mace-md -h
     
