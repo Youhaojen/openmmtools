@@ -1,0 +1,49 @@
+name: build
+on:
+  push:
+    branches: [ "development" ]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash -l {0}
+
+
+jobs:
+  build-icolos:
+    name: Build mace-md
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Install conda
+      uses: conda-incubator/setup-miniconda@v2.1.1
+      with:
+        python-version: 3.10
+        architecture: x64
+    
+    - name: Install mamba
+      run: |
+        conda install -c conda-forge mamba -y
+
+    - name: Build conda env
+      run: |
+        mamba env create -f environment.yml
+   
+    - name: Add pip dependencies
+      run: |
+        pip install git+https://github.com/jharrymoore/openmm-ml.git@mace git+https://github.com/choderalab/mpiplus.git git+https://github.com/ACEsuit/mace.git@develop .
+    
+    - name: Check python installation
+      run: |
+        which python
+        python --version
+        pip --version
+        pip list
+        
+    - name: Check mace-md installation
+    - run: |
+        mace-md -h
+    
