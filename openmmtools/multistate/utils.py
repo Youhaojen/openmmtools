@@ -476,7 +476,6 @@ class NNPCompatibilityMixin(object):
         equilibration_protocol: str,
         **unused_kwargs,
     ):
-
         from openmmtools import alchemy
         from openmmtools import states
         from openmmtools.multistate.multistatereporter import MultiStateReporter
@@ -577,7 +576,7 @@ class NNPCompatibilityMixin(object):
             init_sampler_state.update_from_context(eq_context)
 
             # equilibrate each state
-            for (thermostate, sampler_state) in zip(
+            for thermostate, sampler_state in zip(
                 compound_thermostates, sampler_states
             ):
                 thermostate.apply_to_context(eq_context)

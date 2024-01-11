@@ -200,7 +200,6 @@ class MultiStateSampler(object):
         online_analysis_minimum_iterations=200,
         locality=None,
     ):
-
         # Warn that API is experimental
         logger.warn(
             "Warning: The openmmtools.multistate API is experimental and may change in future releases"
@@ -885,7 +884,6 @@ class MultiStateSampler(object):
 
             # Update thermodynamic states
             self._replica_thermodynamic_states = self._mix_replicas()
-
             # Propagate replicas.
             self._propagate_replicas()
 
@@ -1629,33 +1627,33 @@ class MultiStateSampler(object):
             "Replica {}/{}: minimizing...".format(replica_id + 1, self.n_replicas)
         )
         # Minimize energy.
-        openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
+        # openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
         # Minimize energy.
-        # try:
-        #     if max_iterations == 0:
-        #         logger.debug(
-        #             "Using FIRE: tolerance {} minimizing to convergence".format(
-        #                 tolerance
-        #             )
-        #         )
-        #         while integrator.getGlobalVariableByName("converged") < 1:
-        #             integrator.step(50)
-        #     else:
-        #         logger.debug(
-        #             "Using FIRE: tolerance {} max_iterations {}".format(
-        #                 tolerance, max_iterations
-        #             )
-        #         )
-        #         integrator.step(max_iterations)
-        # except Exception as e:
-        #     if str(e) == "Particle coordinate is nan":
-        #         logger.debug(
-        #             "NaN encountered in FIRE minimizer; falling back to L-BFGS after resetting positions"
-        #         )
-        #         sampler_state.apply_to_context(context)
-        #         openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
-        #     else:
-        #         raise e
+        try:
+            if max_iterations == 0:
+                logger.debug(
+                    "Using FIRE: tolerance {} minimizing to convergence".format(
+                        tolerance
+                    )
+                )
+                while integrator.getGlobalVariableByName("converged") < 1:
+                    integrator.step(50)
+            else:
+                logger.debug(
+                    "Using FIRE: tolerance {} max_iterations {}".format(
+                        tolerance, max_iterations
+                    )
+                )
+                integrator.step(max_iterations)
+        except Exception as e:
+            if str(e) == "Particle coordinate is nan":
+                logger.debug(
+                    "NaN encountered in FIRE minimizer; falling back to L-BFGS after resetting positions"
+                )
+                sampler_state.apply_to_context(context)
+                openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
+            else:
+                raise e
 
         # Get the minimized positions.
         sampler_state.update_from_context(context)
@@ -1681,9 +1679,7 @@ class MultiStateSampler(object):
 
         # Determine neighborhoods (all nodes)
         self._neighborhoods[:, :] = False
-        for (replica_index, state_index) in enumerate(
-            self._replica_thermodynamic_states
-        ):
+        for replica_index, state_index in enumerate(self._replica_thermodynamic_states):
             neighborhood = self._neighborhood(state_index)
             self._neighborhoods[replica_index, neighborhood] = True
 
@@ -1923,9 +1919,7 @@ class MultiStateSampler(object):
 
         logZ = -self._last_mbar_f_k
 
-        for (replica_index, state_index) in enumerate(
-            self._replica_thermodynamic_states
-        ):
+        for replica_index, state_index in enumerate(self._replica_thermodynamic_states):
             neighborhood = self._neighborhood(state_index)
             u_k = self._energy_thermodynamic_states[replica_index, :]
             log_P_k = np.zeros([self.n_states], np.float64)

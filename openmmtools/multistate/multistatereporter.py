@@ -120,7 +120,6 @@ class MultiStateReporter(object):
         checkpoint_storage=None,
         analysis_particle_indices=(),
     ):
-
         # Warn that API is experimental
         logger.warn(
             "Warning: The openmmtools.multistate API is experimental and may change in future releases"
@@ -1028,7 +1027,6 @@ class MultiStateReporter(object):
                 self._ensure_dimension_exists("unsampled", n_unsampled_states)
 
                 if "unsampled_energies" not in self._storage_analysis.variables:
-
                     # Create variable for thermodynamic state energies with units and descriptions.
                     ncvar_unsampled = self._storage_analysis.createVariable(
                         "unsampled_energies",
@@ -1793,7 +1791,6 @@ class MultiStateReporter(object):
             True if system is periodic; False otherwise.
         """
         if "positions" not in dataset.variables:
-
             # Create dimensions. Replica dimension could have been created before.
             dataset.createDimension("atom", n_atoms)
             if "replica" not in dataset.dimensions:
@@ -2002,7 +1999,9 @@ class MultiStateReporter(object):
                         read_iteration, replica_index, :, :
                     ].astype(np.float64)
                     velocities = unit.Quantity(x, unit.nanometer / unit.picoseconds)
-                except KeyError:  # Velocities key/variable not found in serialization (openmmtools<=0.21.2)
+                except (
+                    KeyError
+                ):  # Velocities key/variable not found in serialization (openmmtools<=0.21.2)
                     # pass zeros as velocities when key is not found (<0.21.3 behavior)
                     velocities = np.zeros_like(positions)
 

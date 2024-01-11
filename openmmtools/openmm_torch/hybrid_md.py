@@ -11,6 +11,7 @@ from ase import Atoms
 from rdkit.Chem.rdmolfiles import MolFromPDBFile, MolFromXYZFile
 from openmm.openmm import System
 from typing import List, Tuple, Optional
+from openmm.app.internal.unitcell import reducePeriodicBoxVectors
 from openmm import (
     LangevinMiddleIntegrator,
     RPMDIntegrator,
@@ -81,7 +82,6 @@ from abc import ABC, abstractmethod
 
 
 def get_xyz_from_mol(mol):
-
     xyz = np.zeros((mol.GetNumAtoms(), 3))
     conf = mol.GetConformer()
     for i in range(conf.GetNumAtoms()):
@@ -111,6 +111,7 @@ class MACESystemBase(ABC):
     system: System
     mm_only: bool
     nl: str
+    max_n_pairs: int
     remove_cmm: bool
     unwrap: bool
     set_temperature: bool
@@ -123,6 +124,7 @@ class MACESystemBase(ABC):
         output_dir: str,
         temperature: float,
         nl: str,
+        max_n_pairs: int,
         minimiser: str,
         pressure: Optional[float] = None,
         dtype: torch.dtype = torch.float64,
@@ -132,7 +134,7 @@ class MACESystemBase(ABC):
         mm_only: bool = False,
         remove_cmm: bool = False,
         unwrap: bool = False,
-        set_temperature: bool = False
+        set_temperature: bool = False,
     ) -> None:
         super().__init__()
 
@@ -145,11 +147,12 @@ class MACESystemBase(ABC):
         self.timestep = timestep * femtosecond
         self.dtype = dtype
         self.nl = nl
+        self.max_n_pairs = max_n_pairs
         self.set_temperature = set_temperature
         self.output_dir = output_dir
         self.remove_cmm = remove_cmm
         self.mm_only = mm_only
-        self.minimiser= minimiser
+        self.minimiser = minimiser
         self.unwrap = unwrap
         self.openmm_precision = "Double" if dtype == torch.float64 else "Mixed"
         logger.debug(f"OpenMM will use {self.openmm_precision} precision")
@@ -223,7 +226,6 @@ class MACESystemBase(ABC):
                 self.temperature, self.friction_coeff, self.timestep
             )
         elif integrator_name == "verlet":
-            
             integrator = VerletIntegrator(self.timestep)
         elif integrator_name == "rpmd":
             # note this requires a few changes to how we set positions
@@ -301,7 +303,7 @@ class MACESystemBase(ABC):
             logger.info(f"Setting temperature to {self.temperature} K")
             simulation.context.setVelocitiesToTemperature(self.temperature)
         reporter = StateDataReporter(
-            file=os.path.join(self.output_dir, "md.log"),
+            file=sys.stdout,
             reportInterval=interval,
             step=True,
             time=True,
@@ -324,25 +326,14 @@ class MACESystemBase(ABC):
                 enforcePeriodicBox=False if self.unwrap else True,
             )
         )
-        # we need this to hold the box vectors for NPT simulations
-        # netcdf_reporter = NetCDFReporter(
-        #     file=os.path.join(self.output_dir, output_file[:-4] + ".nc"),
-        #     reportInterval=interval,
-        # )
-        # simulation.reporters.append(netcdf_reporter)
-        dcd_reporter = DCDReporter(
+        simulation.reporters.append(DCDReporter(
             file=os.path.join(self.output_dir, "output.dcd"),
             reportInterval=interval,
             append=restart,
             enforcePeriodicBox=False if self.unwrap else True,
+            )
         )
-        simulation.reporters.append(dcd_reporter)
-        # hdf5_reporter = HDF5Reporter(
-        #     file=os.path.join(self.output_dir, output_file[:-4] + ".h5"),
-        #     reportInterval=interval,
-        #     velocities=True,
-        # )
-        # simulation.reporters.append(hdf5_reporter)
+
         # Add an extra hash to any existing checkpoint files
         checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith("#")]
         for file in checkpoint_files:
@@ -389,7 +380,7 @@ class MACESystemBase(ABC):
         steps_per_equilibration_interval: int = 1000,
         equilibration_protocol: str = "minimise",
         checkpoint_interval: int = 10,
-        repex_type: str = "interpolate"
+        repex_type: str = "interpolate",
     ) -> None:
         repex_file_exists = os.path.isfile(os.path.join(self.output_dir, "repex.nc"))
         # even if restart has been set, disable if the checkpoint file was not found, enforce minimising the system
@@ -429,15 +420,21 @@ class MACESystemBase(ABC):
                 },
             ).sampler
         elif repex_type == "temperature":
-            protocol = {'temperature': [300, 310, 330, 370, 450] * kelvin}
-            thermo_states = states.create_thermodynamic_state_protocol(self.system, protocol)
-            sampler_states = [states.SamplerState(positions=self.modeller.getPositions()) for _ in thermo_states]
-            langevin_move = mcmc.LangevinSplittingDynamicsMove(timestep=self.timestep * femtoseconds ,n_steps=steps)
+            protocol = {"temperature": [300, 310, 330, 370, 450] * kelvin}
+            thermo_states = states.create_thermodynamic_state_protocol(
+                self.system, protocol
+            )
+            sampler_states = [
+                states.SamplerState(positions=self.modeller.getPositions())
+                for _ in thermo_states
+            ]
+            langevin_move = mcmc.LangevinSplittingDynamicsMove(
+                timestep=self.timestep * femtoseconds, n_steps=steps
+            )
 
-
-            sampler = ReplicaExchangeSampler(thermo_states, sampler_states, langevin_move)
-
-
+            sampler = ReplicaExchangeSampler(
+                thermo_states, sampler_states, langevin_move
+            )
 
         # do not minimsie if we are hot-starting the simulation from a checkpoint
         if not restart and equilibration_protocol == "minimise":
@@ -479,7 +476,7 @@ class MACESystemBase(ABC):
             self.system,
             [psi, phi],
             temperature=self.temperature,
-            biasFactor=10.0,
+            biasFactor=100.0,
             height=1.0 * kilojoule_per_mole,
             frequency=100,
             biasDir=os.path.join(self.output_dir, "metaD"),
@@ -506,16 +503,17 @@ class MACESystemBase(ABC):
 
         return alchemical_system
 
-
-          
-
     def run_neq_switching(
-        self,steps: int, interval: int, output_file: str, restart: bool,
-        direction: str = "forward"
+        self,
+        steps: int,
+        interval: int,
+        output_file: str,
+        restart: bool,
+        direction: str = "forward",
     ) -> List[float]:
         """Compute the protocol work performed by switching from the MM description to the MM/ML through lambda_interpolate
-        
-        Ideally this will take a series of snapshots, probably as a pdb file, and run the switching 
+
+        Ideally this will take a series of snapshots, probably as a pdb file, and run the switching
 
         :param int steps: number of steps in non-equilibrium switching simulation
         :param int interval: reporterInterval
@@ -524,8 +522,12 @@ class MACESystemBase(ABC):
 
         if direction not in ["forward", "reverse"]:
             raise ValueError("direction must be either forward or reverse")
-        
-        alchemical_functions = {"lambda_interpolate": "lambda"} if direction == "forward" else {"lambda_interpolate": "1 - lambda"}
+
+        alchemical_functions = (
+            {"lambda_interpolate": "lambda"}
+            if direction == "forward"
+            else {"lambda_interpolate": "1 - lambda"}
+        )
 
         # steps = int(switching_time / self.timestep.value_in_unit(picosecond))
         logger.info("Running NEQ switching for {} steps".format(steps))
@@ -618,7 +620,7 @@ class MACESystemBase(ABC):
             file=checkpoint_filepath, reportInterval=interval
         )
         simulation.reporters.append(checkpoint_reporter)
-       
+
         # We need to take the final state
         simulation.step(steps)
         protocol_work = integrator.get_total_work(dimensionless=True)
@@ -646,9 +648,11 @@ class MixedSystem(MACESystemBase):
         nnpify_type: str,
         potential: str,
         nl: str,
+        max_n_pairs: int,
         minimiser: str,
         output_dir: str,
         padding: float = 1.2,
+        shape: str = "cube",
         ionicStrength: float = 0.15,
         forcefields: List[str] = [
             "amber/protein.ff14SB.xml",
@@ -671,7 +675,7 @@ class MixedSystem(MACESystemBase):
         write_gmx: bool = False,
         remove_cmm=False,
         unwrap=False,
-        set_temperature=False
+        set_temperature=False,
     ) -> None:
         super().__init__(
             file=file,
@@ -685,15 +689,17 @@ class MixedSystem(MACESystemBase):
             timestep=timestep,
             smff=smff,
             nl=nl,
+            max_n_pairs=max_n_pairs,
             minimiser=minimiser,
             mm_only=mm_only,
             remove_cmm=remove_cmm,
             unwrap=unwrap,
-            set_temperature=set_temperature
+            set_temperature=set_temperature,
         )
 
         self.forcefields = forcefields
         self.padding = padding
+        self.shape = shape
         self.ionicStrength = ionicStrength
         self.nonbondedCutoff = nonbondedCutoff
         self.resname = resname
@@ -745,7 +751,6 @@ class MixedSystem(MACESystemBase):
         # Handle a small molecule/small periodic system, passed as an sdf or xyz
         # this should also handle generating smirnoff parameters for something like an octa-acid, where this is still to be handled by the MM forcefield, but needs parameters generated
         elif file.endswith(".sdf") or file.endswith(".xyz"):
-
             # handle the case where the receptor and ligand are both passed as different sdf files:
             if ml_mol != file:
                 logger.info("Combining and parametrising 2 sdf files...")
@@ -768,7 +773,6 @@ class MixedSystem(MACESystemBase):
                 molecule = [molecule, receptor_as_molecule]
 
             else:
-
                 input_file = molecule
                 topology = molecule.to_topology().to_openmm()
                 # Hold positions in nanometers
@@ -790,12 +794,14 @@ class MixedSystem(MACESystemBase):
             interchange.to_top(os.path.join(self.output_dir, "topol.top"))
             interchange.to_gro(os.path.join(self.output_dir, "conf.gro"))
         if self.padding > 0:
+            logger.info(f"Adding {self.shape} solvent box")
             if "tip4p" in self.water_model:
                 self.modeller.addExtraParticles(forcefield)
             self.modeller.addSolvent(
                 forcefield,
                 model=self.water_model,
                 padding=self.padding * nanometers,
+                boxShape=self.shape,
                 ionicStrength=self.ionicStrength * molar,
                 neutralize=False,
             )
@@ -857,6 +863,7 @@ class MixedSystem(MACESystemBase):
                     filename=model_path,
                     dtype=self.dtype,
                     nl=self.nl,
+                    max_n_pairs=self.max_n_pairs
                 ).mixed_system
 
             # optionally, add the alchemical customCVForce for the nonbonded interactions to run ABFE edges
@@ -907,6 +914,7 @@ class PureSystem(MACESystemBase):
         output_dir: str,
         temperature: float,
         nl: str,
+        max_n_pairs: int,
         minimiser: str,
         file: Optional[str] = None,
         boxsize: Optional[int] = None,
@@ -919,7 +927,6 @@ class PureSystem(MACESystemBase):
         unwrap: bool = False,
         set_temperature: bool = False,
     ) -> None:
-
         super().__init__(
             # if file is None, we don't need  to create a topology, so we can pass the ml_mol
             file=ml_mol if file is None else file,
@@ -930,6 +937,7 @@ class PureSystem(MACESystemBase):
             pressure=pressure,
             dtype=dtype,
             nl=nl,
+            max_n_pairs=max_n_pairs,
             friction_coeff=friction_coeff,
             timestep=timestep,
             smff=smff,
@@ -958,7 +966,7 @@ class PureSystem(MACESystemBase):
         # initialize the ase atoms for MACE
         atoms = read(ml_mol)
         if self.minimiser == "ase":
-        # ensure the model was saved on the GPU
+            # ensure the model was saved on the GPU
             tmp_model = torch.load(model_path, map_location="cpu")
             _, tmp_path = mkstemp(suffix=".pt")
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -975,13 +983,17 @@ class PureSystem(MACESystemBase):
             opt = LBFGS(atoms)
             opt.run(fmax=0.2)
             os.remove(tmp_path)
-        
+
         # write out minimised system
         write(os.path.join(self.output_dir, "minimised.xyz"), atoms)
 
         if ml_mol.endswith(".xyz"):
             pos = atoms.get_positions() / 10
             box_vectors = atoms.get_cell() / 10
+            # canonicalise
+            if max(atoms.get_cell().cellpar()[:3]) > 0:
+                box_vectors = reducePeriodicBoxVectors(box_vectors)
+            logger.info(f"Using reduced periodic box vectors {box_vectors}")
             elements = atoms.get_chemical_symbols()
 
             # Create a topology object
@@ -996,12 +1008,15 @@ class PureSystem(MACESystemBase):
             # if there is a periodic box specified add it to the Topology
             if max(atoms.get_cell().cellpar()[:3]) > 0:
                 topology.setPeriodicBoxVectors(vectors=box_vectors)
+            # if there is a periodic box on the pdb file and not the xyz, use that
+        
             # load the pdbfile
             # pdb_top = PDBFile(self.file)
-            # extract the boxvectors
+            # # extract the boxvectors
             # box_vectors = pdb_top.topology.getPeriodicBoxVectors()
-
-            logger.info(f"Initialized topology with {pos.shape} positions")
+            # topology.setPeriodicBoxVectors(box_vectors)
+            #
+            # logger.info(f"Initialized topology with {pos.shape} positions")
 
             self.modeller = Modeller(topology, pos)
 
@@ -1012,20 +1027,39 @@ class PureSystem(MACESystemBase):
             # Hold positions in nanometers
             positions = get_xyz_from_mol(molecule.to_rdkit()) / 10
 
-            # Manually attach periodic box if requested
+            # Manually attach periodic box if requested|
             if self.boxsize is not None:
-
                 boxvecs = np.eye(3, 3) * self.boxsize
                 topology.setPeriodicBoxVectors(boxvecs)
 
             logger.info(f"Initialized topology with {positions.shape} positions")
 
             self.modeller = Modeller(topology, positions)
+        elif ml_mol.endswith(".pdb"):
+            # create a modeller from the pdb file
+            input_file = PDBFile(self.file)
+            topology = input_file.getTopology()
+
+            self.modeller = Modeller(topology, input_file.positions)
+
+
+            logger.info(f"Parased box vectors {self.modeller.topology.getPeriodicBoxVectors()} from pdb file")
+
+        # write the prepared system to pd bfile
+            with open(os.path.join(self.output_dir, "prepared_system.pdb"), "w") as f:
+                PDBFile.writeFile(
+                    self.modeller.topology, self.modeller.getPositions(), file=f
+                )
+
         else:
             raise NotImplementedError
 
         ml_potential = MLPotential(self.potential, model_path=model_path)
-        self.system = ml_potential.createSystem(topology, dtype=self.dtype, nl=self.nl)
+        self.system = ml_potential.createSystem(topology,
+                                                dtype=self.dtype,
+                                                nl=self.nl, 
+                                                max_n_pairs=self.max_n_pairs, 
+                                                ) 
 
         # if pressure is not None:
         #     logger.info(

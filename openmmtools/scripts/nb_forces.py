@@ -54,7 +54,6 @@ def extract_nonbonded_components(values):
     # parsed_smiles = f.readlines()
     old_dir = os.getcwd()
     try:
-
         tmpdir = tempfile.mkdtemp()
 
         with open(os.path.join(tmpdir, "mol.xyz"), "w") as f:

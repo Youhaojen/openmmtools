@@ -30,7 +30,6 @@ def initialize_mm_forcefield(
     forcefields: List = ["amber/protein.ff14SB.xml"],
     smff: str = "openff_unconstrained-1.0.0.offxml",
 ) -> ForceField:
-
     forcefield = ForceField(*forcefields)
     if molecule is not None:
         if isinstance(molecule, Molecule):
@@ -111,10 +110,6 @@ def remove_bonded_forces(
     # Create a new System from it.
 
     return openmm.XmlSerializer.deserialize(ET.tostring(root, encoding="unicode"))
-
-
-
-
 
 
 class NEQSimulation:

@@ -2,7 +2,10 @@
 # uses pytest to run
 import os
 import pytest
-from openmmtools.integrators import LangevinIntegrator, NoseHooverChainVelocityVerletIntegrator
+from openmmtools.integrators import (
+    LangevinIntegrator,
+    NoseHooverChainVelocityVerletIntegrator,
+)
 
 from openmmtools.openmm_torch.hybrid_md import PureSystem, MixedSystem
 import torch
@@ -21,7 +24,7 @@ model_path = os.path.join(TEST_DIR, "MACE_test.model")
 @pytest.mark.parametrize("file", ["ejm_31.sdf", "waterbox.xyz"])
 @pytest.mark.parametrize("integrator", ["langevin", "nose-hoover", "verlet"])
 @pytest.mark.parametrize("nl", ["torch", "nnpops"])
-@pytest.mark.parametrize("minimiser", [ "ase", "openmm"])
+@pytest.mark.parametrize("minimiser", ["ase", "openmm"])
 def test_pure_mace_md(file, nl, remove_cmm, minimiser, integrator):
     file_stub = file.split(".")[0]
     cmm = "cmm" if remove_cmm else "nocmm"
@@ -41,7 +44,7 @@ def test_pure_mace_md(file, nl, remove_cmm, minimiser, integrator):
         dtype=dtype,
         pressure=1.0 if file_stub == "waterbox" else None,
         remove_cmm=remove_cmm,
-        minimiser=minimiser
+        minimiser=minimiser,
     )
     output_file = f"output_pure_{file_stub}_{nl}_{cmm}.pdb"
     system.run_mixed_md(
@@ -87,7 +90,13 @@ def test_hybrid_system_md(nl, remove_cmm, mm_only, water_model, minimiser, integ
     )
     output_file = f"output_hybrid_{nl}_{cmm}_{mm}.pdb"
 
-    system.run_mixed_md(steps=20, interval=5, output_file=output_file, restart=False, integrator_name=integrator)
+    system.run_mixed_md(
+        steps=20,
+        interval=5,
+        output_file=output_file,
+        restart=False,
+        integrator_name=integrator,
+    )
     assert os.path.exists(os.path.join(JUNK_DIR, output_file))
     assert os.path.getsize(os.path.join(JUNK_DIR, output_file)) > 0
 
@@ -107,15 +116,21 @@ def test_rpmd(nl, remove_cmm, minimiser):
         nl=nl,
         pressure=None,
         remove_cmm=remove_cmm,
-        minimiser=minimiser 
+        minimiser=minimiser,
     )
     output_file = f"output_hybrid_rpmd_{nl}_{cmm}.pdb"
 
-    system.run_mixed_md(steps=20, interval=5, output_file=output_file, restart=False, integrator_name="rpmd")
-
+    system.run_mixed_md(
+        steps=20,
+        interval=5,
+        output_file=output_file,
+        restart=False,
+        integrator_name="rpmd",
+    )
 
     assert os.path.exists(os.path.join(JUNK_DIR, output_file))
     assert os.path.getsize(os.path.join(JUNK_DIR, output_file)) > 0
+
 
 # mark as slow test
 @pytest.mark.slow

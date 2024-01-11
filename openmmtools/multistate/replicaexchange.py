@@ -213,7 +213,6 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
     # -------------------------------------------------------------------------
 
     def __init__(self, replica_mixing_scheme="swap-all", **kwargs):
-
         # Initialize multi-state sampler simulation.
         super(ReplicaExchangeSampler, self).__init__(**kwargs)
         self.replica_mixing_scheme = replica_mixing_scheme
@@ -345,7 +344,6 @@ class ReplicaExchangeSampler(multistate.MultiStateSampler):
         """
         # raise ValueError
         for swap_attempt in range(nswap_attempts):
-
             # Choose random replicas uniformly to attempt to swap.
             replica_i = np.random.randint(n_replicas)
             replica_j = np.random.randint(n_replicas)

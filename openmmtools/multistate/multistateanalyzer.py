@@ -1282,7 +1282,6 @@ class MultiStateSamplerAnalyzer(PhaseAnalyzer):
         max_subset=100,
         **kwargs
     ):
-
         # Warn that API is experimental
         logger.warn(
             "Warning: The openmmtools.multistate API is experimental and may change in future releases"
@@ -1388,11 +1387,7 @@ class MultiStateSamplerAnalyzer(PhaseAnalyzer):
         # Compute state index statistical inefficiency of stationary data.
         # states[n][k] is the state index of replica k at iteration n, but
         # the functions wants a list of timeseries states[k][n].
-        states_kn = np.transpose(
-            states[
-                number_equilibrated : self.max_n_iterations,
-            ]
-        )
+        states_kn = np.transpose(states[number_equilibrated : self.max_n_iterations,])
         g = timeseries.statisticalInefficiencyMultiple(states_kn)
 
         return self._MixingStatistics(

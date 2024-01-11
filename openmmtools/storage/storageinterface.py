@@ -120,7 +120,9 @@ class StorageInterfaceDirVar(object):
             # Try to get already on disk variable
             try:
                 self._variable = self._storage_driver.get_storage_variable(path)
-            except KeyError:  # Trap the "not present" case, AttributeErrors are larger problems
+            except (
+                KeyError
+            ):  # Trap the "not present" case, AttributeErrors are larger problems
                 self._variable = self._storage_driver.create_storage_variable(
                     path, type(data)
                 )
@@ -162,7 +164,9 @@ class StorageInterfaceDirVar(object):
             # Try to get already on disk variable
             try:
                 self._variable = self._storage_driver.get_storage_variable(path)
-            except KeyError:  # Trap the "not present" case, AttributeErrors are larger problems
+            except (
+                KeyError
+            ):  # Trap the "not present" case, AttributeErrors are larger problems
                 self._variable = self._storage_driver.create_storage_variable(
                     path, type(data)
                 )

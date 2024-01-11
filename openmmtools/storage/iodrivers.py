@@ -324,7 +324,9 @@ class NetCDFIODriver(StorageIODriver):
                         if store_type == "groups":
                             variable = obj
                             is_group = True
-                    except AttributeError:  # Trap the case of no group name in head_group, non-fatal
+                    except (
+                        AttributeError
+                    ):  # Trap the case of no group name in head_group, non-fatal
                         pass
                 if not is_group:
                     # Bind to the specific variable instead since its not a group

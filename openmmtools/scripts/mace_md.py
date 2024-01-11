@@ -64,11 +64,14 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
     )
     parser.add_argument("--steps", "-s", type=int, default=10000)
     parser.add_argument("--padding", "-p", default=1.2, type=float)
+    parser.add_argument("--shape", type=str, default="cube", choices=["cube", "dodecahedron", "octahedron"])
     parser.add_argument("--nonbondedCutoff", "-c", default=1.0, type=float)
-    parser.add_argument("--ionicStrength", "-i", default=0.15, type=float)
+    parser.add_argument("--ionic_strength", "-i", default=0.15, type=float)
     parser.add_argument("--potential", default="mace", type=str)
     parser.add_argument("--temperature", type=float, default=298.15)
-    parser.add_argument("--minimiser", type=str, choices=["openmm", "ase"], default=None)
+    parser.add_argument(
+        "--minimiser", type=str, choices=["openmm", "ase"], default=None
+    )
     parser.add_argument("--pressure", type=float, default=None)
     parser.add_argument("--remove_cmm", action="store_true")
     parser.add_argument("--set_temperature", action="store_true")
@@ -96,7 +99,9 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             to a separate array on the atoms object, writes back out",
     )
     parser.add_argument("--replicas", type=int, default=10)
-    parser.add_argument("--direction", type=str, choices=["forward", "reverse"], default="forward")
+    parser.add_argument(
+        "--direction", type=str, choices=["forward", "reverse"], default="forward"
+    )
     parser.add_argument(
         "--output_file",
         "-o",
@@ -111,13 +116,9 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
         help="directory where all output will be written",
         default="./junk",
     )
-    parser.add_argument(
-        "--neighbour_list", default="torch_nl", choices=["torch_nl", "torch_nl_n2"]
-    )
 
     # optionally specify box vectors for periodic systems
     parser.add_argument("--box", type=float)
-
     parser.add_argument("--log_dir", default="./logs")
 
     parser.add_argument("--restart", action="store_true")
@@ -162,6 +163,12 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
         help="which neighbour list to use",
         choices=["nnpops", "torch"],
         default="nnpops",
+    )
+    parser.add_argument(
+        "--max_n_pairs",
+        help="maximum number of pairs to return for the neighbour list",
+        type=int,
+        default=-1
     )
     parser.add_argument("--meta", help="Switch on metadynamics", action="store_true")
     parser.add_argument(
@@ -224,8 +231,10 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
         )
 
     # Only need interpolation when running repex and not decoupling
-    interpolate = True if (args.run_type in ["repex", "neq"] and not args.decouple) else False
-    
+    interpolate = (
+        True if (args.run_type in ["repex", "neq"] and not args.decouple) else False
+    )
+
     if args.minimiser == "ase" and args.system_type != "pure":
         raise ValueError("Cannot use ASE minimiser with a hybrid system, use openmm")
 
@@ -243,6 +252,7 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             pressure=args.pressure,
             dtype=dtype,
             nl=args.nl,
+            max_n_pairs=args.max_n_pairs,
             timestep=args.timestep,
             smff=args.smff,
             boxsize=args.box,
@@ -260,13 +270,15 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             forcefields=args.forcefields,
             resname=args.resname,
             nnpify_type=args.ml_selection,
-            ionicStrength=args.ionicStrength,
+            ionicStrength=args.ionic_strength,
             nonbondedCutoff=args.nonbondedCutoff,
             potential=args.potential,
             padding=args.padding,
+            shape=args.shape,
             temperature=args.temperature,
             dtype=dtype,
             nl=args.nl,
+            max_n_pairs=args.max_n_pairs,
             output_dir=args.output_dir,
             smff=args.smff,
             pressure=args.pressure,
@@ -301,11 +313,13 @@ o8o        o888o o88o     o8888o  `Y8bood8P'  o888ooooood8         o8o        o8
             checkpoint_interval=args.interval,
         )
     elif args.run_type == "neq":
-        system.run_neq_switching(steps=args.steps,
-                                 interval = args.interval,
-                                 restart=args.restart,
-                                 output_file=args.output_file,
-                                 direction=args.direction)
+        system.run_neq_switching(
+            steps=args.steps,
+            interval=args.interval,
+            restart=args.restart,
+            output_file=args.output_file,
+            direction=args.direction,
+        )
     elif args.run_type == "atm":
         raise NotImplementedError
         system.run_atm(args.steps, args.interval)

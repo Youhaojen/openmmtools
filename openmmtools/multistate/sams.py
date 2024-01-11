@@ -497,7 +497,7 @@ class SAMSSampler(multistate.MultiStateSampler):
 
     def _local_jump(self, replicas_log_P_k):
         n_replica, n_states, locality = self.n_replicas, self.n_states, self.locality
-        for (replica_index, current_state_index) in enumerate(
+        for replica_index, current_state_index in enumerate(
             self._replica_thermodynamic_states
         ):
             u_k = np.zeros([n_states], np.float64)
@@ -583,7 +583,7 @@ class SAMSSampler(multistate.MultiStateSampler):
         logger.debug(
             "Using restricted range jump with locality %s" % str(self.locality)
         )
-        for (replica_index, current_state_index) in enumerate(
+        for replica_index, current_state_index in enumerate(
             self._replica_thermodynamic_states
         ):
             u_k = self._energy_thermodynamic_states[replica_index, :]
@@ -739,9 +739,7 @@ class SAMSSampler(multistate.MultiStateSampler):
         logger.debug("  stage: %s" % self._stage)
 
         # Update logZ estimates from all replicas
-        for (replica_index, state_index) in enumerate(
-            self._replica_thermodynamic_states
-        ):
+        for replica_index, state_index in enumerate(self._replica_thermodynamic_states):
             logger.debug(" Replica %d state %d" % (replica_index, state_index))
             # Compute attenuation factor gamma
             beta_factor = 0.8
