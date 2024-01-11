@@ -119,6 +119,7 @@ def test_rpmd(nl, remove_cmm, minimiser):
         pressure=None,
         remove_cmm=remove_cmm,
         minimiser=minimiser,
+        max_n_pairs=-1
     )
     output_file = f"output_hybrid_rpmd_{nl}_{cmm}.pdb"
 
