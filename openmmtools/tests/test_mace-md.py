@@ -45,6 +45,7 @@ def test_pure_mace_md(file, nl, remove_cmm, minimiser, integrator):
         pressure=1.0 if file_stub == "waterbox" else None,
         remove_cmm=remove_cmm,
         minimiser=minimiser,
+        max_n_pairs=-1
     )
     output_file = f"output_pure_{file_stub}_{nl}_{cmm}.pdb"
     system.run_mixed_md(
@@ -87,6 +88,7 @@ def test_hybrid_system_md(nl, remove_cmm, mm_only, water_model, minimiser, integ
         resname="UNK",
         minimiser=minimiser,
         water_model=water_model,
+        max_n_pairs=-1
     )
     output_file = f"output_hybrid_{nl}_{cmm}_{mm}.pdb"
 
