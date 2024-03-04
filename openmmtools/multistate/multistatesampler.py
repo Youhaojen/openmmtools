@@ -35,6 +35,7 @@ import typing
 import inspect
 import logging
 import datetime
+import subprocess
 
 import numpy as np
 
@@ -47,8 +48,7 @@ except ImportError:  # OpenMM < 7.6
 from openmmtools import multistate, utils, states, mcmc, cache
 import mpiplus
 from openmmtools.multistate.utils import SimulationNaNError
-
-from pymbar.utils import ParameterError
+from openmmtools.multistate.pymbar import ParameterError
 
 from openmmtools.integrators import FIREMinimizationIntegrator
 
@@ -659,6 +659,14 @@ class MultiStateSampler(object):
                 "refusing to overwrite.".format(self._reporter.filepath)
             )
 
+        # Make sure online analysis interval is a multiples of the reporter's checkpoint interval
+        # this avoids having redundant iteration information in the real time yaml files
+        # only check if self.online_analysis_interval is set
+        if self.online_analysis_interval:
+            if self.online_analysis_interval % self._reporter.checkpoint_interval != 0:
+                raise ValueError(f"Online analysis interval: {self.online_analysis_interval}, must be a "
+                                 f"multiple of the checkpoint interval: {self._reporter.checkpoint_interval}")
+
         # Make sure sampler_states is an iterable of SamplerStates.
         if isinstance(sampler_states, states.SamplerState):
             sampler_states = [sampler_states]
@@ -773,10 +781,8 @@ class MultiStateSampler(object):
         production_mcmc_moves = self._mcmc_moves
         self._mcmc_moves = mcmc_moves
         for iteration in range(1, 1 + n_iterations):
-            logger.debug(
-                "Equilibration iteration {}/{}".format(iteration, n_iterations)
-            )
-            timer.start("Equilibration Iteration")
+            logger.info("Equilibration iteration {}/{}".format(iteration, n_iterations))
+            timer.start('Equilibration Iteration')
 
             # NOTE: Unlike run(), do NOT increment iteration counter.
             # self._iteration += 1
@@ -799,17 +805,12 @@ class MultiStateSampler(object):
             estimated_finish_time = time.time() + estimated_time_remaining
             # TODO: Transmit timing information
 
-            # Show timing statistics if debug level is activated.
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("Iteration took {:.3f}s.".format(iteration_time))
-                if estimated_time_remaining != float("inf"):
-                    logger.debug(
-                        "Estimated completion (of equilibration only) in {}, at {} (consuming total wall clock time {}).".format(
-                            str(datetime.timedelta(seconds=estimated_time_remaining)),
-                            time.ctime(estimated_finish_time),
-                            str(datetime.timedelta(seconds=estimated_total_time)),
-                        )
-                    )
+            logger.info("Iteration took {:.3f}s.".format(iteration_time))
+            if estimated_time_remaining != float('inf'):
+                logger.info("Estimated completion (of equilibration only) in {}, at {} (consuming total wall clock time {}).".format(
+                    str(datetime.timedelta(seconds=estimated_time_remaining)),
+                    time.ctime(estimated_finish_time),
+                    str(datetime.timedelta(seconds=estimated_total_time))))
         timer.report_timing()
 
         # Restore production MCMCMoves.
@@ -877,10 +878,10 @@ class MultiStateSampler(object):
             # Increment iteration counter.
             self._iteration += 1
 
-            logger.debug("*" * 80)
-            logger.debug("Iteration {}/{}".format(self._iteration, iteration_limit))
-            logger.debug("*" * 80)
-            timer.start("Iteration")
+            logger.info('*' * 80)
+            logger.info('Iteration {}/{}'.format(self._iteration, iteration_limit))
+            logger.info('*' * 80)
+            timer.start('Iteration')
 
             # Update thermodynamic states
             self._replica_thermodynamic_states = self._mix_replicas()
@@ -906,21 +907,13 @@ class MultiStateSampler(object):
                 iteration_limit,
             )
 
-            # Show timing statistics if debug level is activated.
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "Iteration took {:.3f}s.".format(
-                        self._timing_data["iteration_seconds"]
-                    )
-                )
-                if self._timing_data["estimated_time_remaining"] != float("inf"):
-                    logger.debug(
-                        "Estimated completion in {}, at {} (consuming total wall clock time {}).".format(
-                            self._timing_data["estimated_time_remaining"],
-                            self._timing_data["estimated_localtime_finish_date"],
-                            self._timing_data["estimated_total_time"],
-                        )
-                    )
+            # Log timing data as info level -- useful for users by default
+            logger.info("Iteration took {:.3f}s.".format(self._timing_data["iteration_seconds"]))
+            if self._timing_data["estimated_time_remaining"] != float('inf'):
+                logger.info("Estimated completion in {}, at {} (consuming total wall clock time {}).".format(
+                    self._timing_data["estimated_time_remaining"],
+                    self._timing_data["estimated_localtime_finish_date"],
+                    self._timing_data["estimated_total_time"]))
 
             # Perform sanity checks to see if we should terminate here.
             self._check_nan_energy()
@@ -1179,13 +1172,12 @@ class MultiStateSampler(object):
                 # Found data, can escape loop
                 break
             except StopIteration:
-                raise self._throw_restoration_error(
-                    "Attempting to restore from any checkpoint failed. "
-                    "Either your data is fully corrupted or something has gone very "
-                    "wrong to see this message. "
-                    "Please open an issue on the GitHub issue tracker if you see this!"
-                )
-            except:
+                raise self._throw_restoration_error("Attempting to restore from any checkpoint failed. "
+                                                    "Either your data is fully corrupted or something has gone very "
+                                                    "wrong to see this message. "
+                                                    "Please open an issue on the GitHub issue tracker if you see this!")
+            except Exception as err:
+                raise err
                 # Trap all other errors caught by the load process
                 continue
 
@@ -1213,12 +1205,12 @@ class MultiStateSampler(object):
         self._thermodynamic_states = thermodynamic_states
         self._unsampled_states = unsampled_states
         self._sampler_states = sampler_states
-        self._replica_thermodynamic_states = state_indices
+        self._replica_thermodynamic_states = np.array(state_indices)
         self._energy_thermodynamic_states = energy_thermodynamic_states
         self._neighborhoods = neighborhoods
         self._energy_unsampled_states = energy_unsampled_states
-        self._n_accepted_matrix = n_accepted_matrix
-        self._n_proposed_matrix = n_proposed_matrix
+        self._n_accepted_matrix = np.array(n_accepted_matrix)
+        self._n_proposed_matrix = np.array(n_proposed_matrix)
         self._metadata = metadata
 
         self._last_mbar_f_k = last_mbar_f_k
@@ -1646,10 +1638,8 @@ class MultiStateSampler(object):
                 )
                 integrator.step(max_iterations)
         except Exception as e:
-            if str(e) == "Particle coordinate is nan":
-                logger.debug(
-                    "NaN encountered in FIRE minimizer; falling back to L-BFGS after resetting positions"
-                )
+            if 'particle coordinate is nan' in str(e).lower():
+                logger.debug('NaN encountered in FIRE minimizer; falling back to L-BFGS after resetting positions')
                 sampler_state.apply_to_context(context)
                 openmm.LocalEnergyMinimizer.minimize(context, tolerance, max_iterations)
             else:
@@ -2109,17 +2099,19 @@ class MultiStateSampler(object):
     @staticmethod
     def _display_cuda_devices():
         """Query system nvidia-smi to get available GPUs indices and names in debug log."""
-        # Read nvidia-smi query, should return empty strip if no GPU is found.
-        cuda_query_output = (
-            os.popen("nvidia-smi --query-gpu=index,gpu_name --format=csv,noheader")
-            .read()
-            .strip()
-        )
-        # Split by line jump and comma
-        cuda_devices_list = [
-            entry.split(",") for entry in cuda_query_output.split("\n")
-        ]
-        logger.debug(f"CUDA devices available: {*cuda_devices_list,}")
+
+        cuda_query_output = subprocess.run("nvidia-smi --query-gpu=gpu_uuid,gpu_name,compute_mode  --format=csv", shell=True, capture_output=True, text=True)
+        # Check if command worked
+        if cuda_query_output.returncode == 0:
+            # Split by line jump and comma
+            cuda_devices_list = [entry for entry in cuda_query_output.stdout.splitlines()]
+            logger.debug(f"CUDA devices available: {*cuda_devices_list,}")
+            # We only support "Default" and not "Exclusive_Process" for the compute mode
+            if "Default" not in cuda_query_output.stdout:
+                logger.warning(f"GPU in 'Exclusive_Process' mode (or Prohibited), one context is allowed per device. This may prevent some openmmtools features from working. GPU must be in 'Default' compute mode")
+        # Handel the case where the command had some error
+        else:
+            logger.debug(f"nvidia-smi command failed: {cuda_query_output.stderr}, this is expected if there is no GPU available")
 
     def _flatten_moves_iterator(self):
         """Recursively flatten MCMC moves. Handles the cases where each move can be a set of moves, for example with

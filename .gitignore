@@ -102,7 +102,5 @@ ENV/
 # mypy
 .mypy_cache/
 
-
-examples/example_data/compiled_models
-examples/example_data/junk/*
-*.pt
+# macOS
+.DS_Store

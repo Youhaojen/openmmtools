@@ -24,6 +24,7 @@ LICENSE
 This code is licensed under the latest available version of the MIT License.
 
 """
+from typing import Dict
 import logging
 import warnings
 import numpy as np
@@ -32,7 +33,7 @@ from openmm.app.pdbfile import PDBFile
 from openmmtools import cache
 from openmm import System
 
-from pymbar import timeseries  # for statistical inefficiency analysis
+from openmmtools.multistate.pymbar import subsample_correlated_data, statistical_inefficiency
 
 logger = logging.getLogger(__name__)
 
@@ -105,16 +106,16 @@ def get_decorrelation_time(timeseries_to_analyze):
     """
     Compute the decorrelation times given a timeseries.
 
-    See the ``pymbar.timeseries.statisticalInefficiency`` for full documentation
+    See the ``pymbar.timeseries.statistical_inefficiency`` for full documentation
     """
-    return timeseries.statisticalInefficiency(timeseries_to_analyze)
+    return statistical_inefficiency(timeseries_to_analyze)
 
 
 def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subset=100):
     """
     Compute the correlation time and n_effective per sample with tuning to how you want your data formatted
 
-    This is a modified pass-through to ``pymbar.timeseries.detectEquilibration`` does, returning the per sample data.
+    This is a modified pass-through to ``pymbar.timeseries.statistical_inefficiency`` does, returning the per sample data.
 
     It has been modified to specify the maximum number of time points to consider, evenly spaced over the timeseries.
     This is different than saying "I want analysis done every X for total points Y = len(timeseries)/X",
@@ -123,7 +124,7 @@ def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subs
     Note that the returned arrays will be of size max_subset - 1, because we always discard data from the first time
     origin due to equilibration.
 
-    See the ``pymbar.timeseries.detectEquilibration`` function for full algorithm documentation
+    See the ``pymbar.timeseries.statistical_inefficiency`` function for full algorithm documentation
 
     Parameters
     ----------
@@ -185,9 +186,11 @@ def get_equilibration_data_per_sample(timeseries_to_analyze, fast=True, max_subs
     i_t = np.floor(counter * time_size / max_subset).astype(int)
     for i, t in enumerate(i_t):
         try:
-            g_i[i] = timeseries.statisticalInefficiency(series[t:], fast=fast)
-        except:
-            g_i[i] = time_size - t + 1
+            g_i[i] = statistical_inefficiency(series[t:], fast=fast)
+        except Exception as e:
+            print("If you see this, open an issue https://github.com/choderalab/openmmtools/issues")
+            raise e
+            g_i[i] = (time_size - t + 1)
         n_effective_i[i] = (time_size - t + 1) / g_i[i]
 
     # We should never choose data from the first time origin as the equilibrated data because
@@ -214,7 +217,7 @@ def get_equilibration_data(timeseries_to_analyze, fast=True, max_subset=1000):
         The full timeseries is used if the timeseries is smaller than ``max_subset`` or if ``max_subset`` is None
     fast : bool, optional. Default: True
         If True, will use faster (but less accurate) method to estimate correlation time
-        passed on to timeseries module.
+        pass:d on to timeseries module.
 
     Returns
     -------
@@ -299,9 +302,7 @@ def subsample_data_along_axis(data, subsample_rate, axis):
     cast_data = np.asarray(data)
     data_shape = cast_data.shape
     # Since we already have g, we can just pass any appropriate shape to the subsample function
-    indices = timeseries.subsampleCorrelatedData(
-        np.zeros(data_shape[axis]), g=subsample_rate
-    )
+    indices = subsample_correlated_data(np.zeros(data_shape[axis]), g=subsample_rate)
     subsampled_data = np.take(cast_data, indices, axis=axis)
     return subsampled_data
 

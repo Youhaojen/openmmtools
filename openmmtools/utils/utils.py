@@ -28,6 +28,7 @@ import tempfile
 import functools
 import importlib
 import contextlib
+import warnings
 import zlib
 
 import numpy as np
@@ -728,11 +729,9 @@ def deserialize(serialization):
     try:
         instance.__setstate__(serialization)
     except AttributeError:
-        raise ValueError(
-            "Cannot deserialize class {} without a __setstate__ method".format(
-                class_name
-            )
-        )
+        raise ValueError('Cannot deserialize class {} without a __setstate__ method'.format(class_name))
+    except KeyError as e:  # Key not found in options/variables -- backward compatibility for <=0.21.4
+        warnings.warn(f"Key {e} not found in {instance.__class__.__name__}.")
     return instance
 
 

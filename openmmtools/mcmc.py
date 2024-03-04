@@ -109,10 +109,11 @@ the DummyCache.
 # GLOBAL IMPORTS
 # =============================================================================
 
-import os
 import abc
 import copy
 import logging
+import os
+import warnings
 
 import numpy as np
 
@@ -770,8 +771,10 @@ class BaseIntegratorMove(MCMCMove):
                 # Run dynamics.
                 timer.start("{}: step({})".format(move_name, self.n_steps))
                 integrator.step(self.n_steps)
-            except Exception:
+            except Exception as e:
                 # Catches particle positions becoming nan during integration.
+                # Return the exception message as a warning
+                warnings.warn(str(e))
                 restart = True
             else:
                 timer.stop("{}: step({})".format(move_name, self.n_steps))
@@ -792,6 +795,7 @@ class BaseIntegratorMove(MCMCMove):
                     potential_energy.value_in_unit(potential_energy.unit)
                 )
 
+            # TODO: Probably refactor this whole thing to do simple restart
             # Restart the move if we found NaNs.
             if restart:
                 err_msg = (
