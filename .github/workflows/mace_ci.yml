@@ -10,7 +10,7 @@ defaults:
 
 
 jobs:
-  build-icolos:
+  build-mace-openmm:
     name: Build mace-md
     runs-on: ubuntu-latest
 
@@ -30,7 +30,7 @@ jobs:
 
     - name: Build conda env
       run: |
-        mamba env create -f environment.yml
+        mamba env create -f mace-openmm.yml
    
     - name: Add pip dependencies
       run: |
