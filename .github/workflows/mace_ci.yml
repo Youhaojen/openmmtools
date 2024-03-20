@@ -35,7 +35,7 @@ jobs:
    
     - name: Add pip dependencies
       run: |
-        pip install git+https://github.com/jharrymoore/openmm-ml.git@mace git+https://github.com/choderalab/mpiplus.git git+https://github.com/ACEsuit/mace.git@main .
+        pip install git+https://github.com/jharrymoore/openmm-ml.git@mace git+https://github.com/choderalab/mpiplus.git git+https://github.com/ACEsuit/mace.git@main git+https://github.com/jharrymoore/openmmtools.git@development
     
     - name: Check python installation
       run: |
