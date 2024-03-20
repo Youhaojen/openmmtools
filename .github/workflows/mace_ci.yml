@@ -30,6 +30,7 @@ jobs:
 
     - name: Build conda env
       run: |
+        export CONDA_OVERRIDE_CUDA=11.8
         mamba env create -f mace-openmm.yml
    
     - name: Add pip dependencies
