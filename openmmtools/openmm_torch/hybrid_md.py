@@ -1054,7 +1054,7 @@ class PureSystem(MACESystemBase):
         else:
             raise NotImplementedError
 
-        ml_potential = MLPotential(self.potential, model_path=model_path)
+        ml_potential = MLPotential(self.potential, modelPath=model_path)
         self.system = ml_potential.createSystem(topology,
                                                 dtype=self.dtype,
                                                 nl=self.nl, 
